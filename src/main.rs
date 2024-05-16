@@ -1,6 +1,7 @@
 use crate::config::RunConfiguration;
 use anyhow::anyhow;
 use clap::Parser as ClapParser;
+use git2::Repository;
 use regex::Regex;
 use std::path::PathBuf;
 use toml;
@@ -40,7 +41,7 @@ fn get_solver_version(verus_repo: &PathBuf, solver_exe: &str, fmt_str: &str) -> 
     Ok(v)
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     tracing_subscriber::fmt()
@@ -56,6 +57,10 @@ fn main() {
         .init();
 
     println!("Hello, world!");
-    let _z3_version = get_solver_version(&args.verus_repo, "z3", "Z3 version");
-    let _cvc5_version = get_solver_version(&args.verus_repo, "cvc5", "This is cvc5 version");
+//    let _z3_version = get_solver_version(&args.verus_repo, "z3", "Z3 version");
+//   let _cvc5_version = get_solver_version(&args.verus_repo, "cvc5", "This is cvc5 version");
+
+    // let verus_repo = Repository::open(args.verus_repo)?;
+    // println!("Found repo with head {:?}, state {:?}, ", verus_repo.head()?.name().unwrap(), verus_repo.state());
+    Ok(())
 }
