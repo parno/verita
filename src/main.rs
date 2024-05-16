@@ -26,7 +26,7 @@ fn get_z3_version(verus_repo: &PathBuf) -> anyhow::Result<String> {
     let sh = Shell::new()?;
     let output = cmd!(sh, "{verus_repo}/source/z3 --version") //.quiet().run()?;
         .output()?;
-    dbg!(&output);
+    //dbg!(&output);
     let output_str = String::from_utf8(output.stdout)?;
     let v = Regex::new(r"^Z3 version ([0-9.]*) ")?
         .captures(&output_str)
@@ -36,6 +36,23 @@ fn get_z3_version(verus_repo: &PathBuf) -> anyhow::Result<String> {
         .as_str()
         .to_string();
     println!("Found Z3 version: {v}");
+    Ok(v)
+}
+
+fn get_cvc5_version(verus_repo: &PathBuf) -> anyhow::Result<String> {
+    let sh = Shell::new()?;
+    let output = cmd!(sh, "{verus_repo}/source/cvc5 --version") //.quiet().run()?;
+        .output()?;
+    //dbg!(&output);
+    let output_str = String::from_utf8(output.stdout)?;
+    let v = Regex::new(r"^This is cvc5 version ([0-9.]*) ")?
+        .captures(&output_str)
+        .ok_or_else(|| anyhow!("Failed to find cvc5 version"))?
+        .get(1)
+        .expect("missing capture group")
+        .as_str()
+        .to_string();
+    println!("Found cvc5 version: {v}");
     Ok(v)
 }
 
@@ -70,4 +87,5 @@ fn main() {
 
     println!("Hello, world!");
     let _z3_version = get_z3_version(&args.verus_repo);
+    let _cvc_version = get_cvc5_version(&args.verus_repo);
 }
