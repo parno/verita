@@ -2,18 +2,18 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Hash)]
 #[serde(rename_all = "kebab-case")]
-pub struct VerusOutputTimesMs {
-    estimated_cpu_time: u64,
-    total: u64,
-    smt: VerusOutputSmtTimesMs,
-}
-
-#[derive(Deserialize, Hash)]
-#[serde(rename_all = "kebab-case")]
 pub struct VerusOutputSmtTimesMs {
     smt_init: u64,
     smt_run: u64,
     total: u64,
+}
+
+#[derive(Deserialize, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub struct VerusOutputTimesMs {
+    estimated_cpu_time: u64,
+    total: u64,
+    smt: VerusOutputSmtTimesMs,
 }
 
 #[derive(Debug, Serialize, Deserialize, Hash, Clone)]
