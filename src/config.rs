@@ -18,7 +18,6 @@ pub struct RunConfiguration {
     verus_extra_args: Option<Vec<String>>,
     // #[serde(default = true)]
     // verus_verify_vstd: bool,
-
     #[serde(rename = "project")]
     projects: Vec<RunConfigurationProject>,
 }

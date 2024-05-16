@@ -1,10 +1,10 @@
-use std::path::PathBuf;
-use clap::Parser as ClapParser;
 use crate::config::RunConfiguration;
+use clap::Parser as ClapParser;
+use regex::Regex;
+use std::path::PathBuf;
+use toml;
 use tracing::{error, info}; // debug, trace
 use xshell::{cmd, Shell};
-use toml;
-use regex::Regex;
 
 pub mod config;
 
@@ -27,11 +27,16 @@ fn get_z3_version(verus_repo: &PathBuf) -> anyhow::Result<String> {
         .output()?;
     dbg!(output);
     let output_str = String::from_utf8(output.stdout)?;
-    let v = Regex::new(r"^Z3 version ([0-9.]*) ")?.captures(&output_str).ok_or_else(|| "Failed to find Z3 version").expect("missing capture group").get(1)?.as_str().to_string();
-    
+    let v = Regex::new(r"^Z3 version ([0-9.]*) ")?
+        .captures(&output_str)
+        .ok_or_else(|| "Failed to find Z3 version")
+        .expect("missing capture group")
+        .get(1)?
+        .as_str()
+        .to_string();
+
     Ok("z3".to_string())
 }
-
 
 fn run(run_configuration_path: &PathBuf) -> Result<(), String> {
     let run_configuration: RunConfiguration = toml::from_str(
