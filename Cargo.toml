@@ -2,5 +2,13 @@
 name = "verita"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "A simple crater-inspired tool for Verus"
+homepage = "https://github.com/parno/verita"
+repository = "https://github.com/parno/verita"
+readme = "README.md"
 
 [dependencies]
+clap = { version = "4.3.11", features = ["derive"] }
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.17" }
