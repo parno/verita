@@ -68,7 +68,6 @@ fn main() -> anyhow::Result<()> {
         })
         .init();
 
-    println!("Hello, world!");
     let z3_version = match get_solver_version(&args.verus_repo, "z3", "Z3 version") {
         Ok(v) => v,
         Err(_) => "unknown".to_string(),
@@ -109,13 +108,20 @@ fn main() -> anyhow::Result<()> {
     sh.set_var("VERUS_Z3_PATH", args.verus_repo.join("source/z3"));
     sh.set_var("VERUS_CVC5_PATH", args.verus_repo.join("source/cvc5"));
 
-    //    let workdir = TempDir::new("verita")?;
     let date = chrono::Utc::now()
         .format("%Y-%m-%d-%H-%M-%S-%3f")
         .to_string();
     let output_path = Path::new("output").join(&date);
-    std::fs::create_dir_all(&output_path);
-    let workdir = std::env::temp_dir().join("verita").join(&date);
+    let tmp_dir = TempDir::new("verita")?;
+    let perm_temp_dir = std::env::temp_dir().join("verita").join(&date);
+    std::fs::create_dir_all(&output_path)?;
+    let workdir = if args.debug_level > 0 {
+        // Use a directory that won't disappear after we run, so we can debug any issues that arise
+        perm_temp_dir.as_path()
+    } else {
+        // Use a directory that will be automatically reclaimed after we terminate
+        tmp_dir.path()
+    };
     let mut project_summaries = Vec::new();
     for project in run_configuration.projects.iter() {
         info!("running project {}", project.name);
@@ -127,17 +133,16 @@ fn main() -> anyhow::Result<()> {
         let (rev, _reference) = project_repo
             .revparse_ext(&project.refspec)
             .map_err(|e| anyhow!("failed to find {}: {}", project.refspec, e))?;
-        project_repo.checkout_tree(&rev, None);
+        project_repo.checkout_tree(&rev, None)?;
         let hash = rev.id().to_string();
         sh.change_dir(repo_path);
 
         if let Some(prepare_script) = &project.prepare_script {
-            let result = log_command(&mut cmd!(sh, "/bin/bash -c {prepare_script}").into())
+            log_command(&mut cmd!(sh, "/bin/bash -c {prepare_script}").into())
                 .status()
                 .map_err(|e| {
                     anyhow!("cannot execute prepare script for {}: {}", &project.name, e)
                 })?;
-            //result.success_or_err()?;
         }
         let project_verification_start = std::time::Instant::now();
         let target = &project.crate_root;
