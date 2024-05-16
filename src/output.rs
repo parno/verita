@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Hash)]
 #[serde(rename_all = "kebab-case")]
-struct VerusOutputTimesMs {
+pub struct VerusOutputTimesMs {
     estimated_cpu_time: u64,
     total: u64,
     smt: VerusOutputSmtTimesMs,
@@ -10,7 +10,7 @@ struct VerusOutputTimesMs {
 
 #[derive(Deserialize, Hash)]
 #[serde(rename_all = "kebab-case")]
-struct VerusOutputSmtTimesMs {
+pub struct VerusOutputSmtTimesMs {
     smt_init: u64,
     smt_run: u64,
     total: u64,
@@ -18,7 +18,7 @@ struct VerusOutputSmtTimesMs {
 
 #[derive(Debug, Serialize, Deserialize, Hash, Clone)]
 #[serde(rename_all = "kebab-case")]
-struct VerusOutputVerificationResults {
+pub struct VerusOutputVerificationResults {
     encountered_vir_error: bool,
     success: Option<bool>,
     verified: Option<u64>,
@@ -28,7 +28,7 @@ struct VerusOutputVerificationResults {
 
 #[derive(Deserialize, Hash)]
 #[serde(rename_all = "kebab-case")]
-struct VerusOutput {
+pub struct VerusOutput {
     times_ms: VerusOutputTimesMs,
     verification_results: VerusOutputVerificationResults,
 }

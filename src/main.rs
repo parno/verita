@@ -1,15 +1,17 @@
 use crate::config::RunConfiguration;
+use crate::output::VerusOutput;
 use anyhow::anyhow;
 use clap::Parser as ClapParser;
 use git2::Repository;
 use regex::Regex;
-use std::{fs, path::PathBuf};
+use std::{fs, path::Path, path::PathBuf};
 use tempdir::TempDir;
 use toml;
 use tracing::{error, info}; // debug, trace
 use xshell::{cmd, Shell};
 
 pub mod config;
+pub mod output;
 
 #[derive(ClapParser)]
 #[command(version, about)]
@@ -24,7 +26,11 @@ struct Args {
     debug_level: u8,
 }
 
-fn get_solver_version(verus_repo: &PathBuf, solver_exe: &str, fmt_str: &str) -> anyhow::Result<String> {
+fn get_solver_version(
+    verus_repo: &PathBuf,
+    solver_exe: &str,
+    fmt_str: &str,
+) -> anyhow::Result<String> {
     let sh = Shell::new()?;
     let output = cmd!(sh, "{verus_repo}/source/{solver_exe} --version") //.quiet().run()?;
         .output()?;
@@ -63,8 +69,14 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     println!("Hello, world!");
-//    let _z3_version = get_solver_version(&args.verus_repo, "z3", "Z3 version");
-//   let _cvc5_version = get_solver_version(&args.verus_repo, "cvc5", "This is cvc5 version");
+    let z3_version = match get_solver_version(&args.verus_repo, "z3", "Z3 version") {
+        Ok(v) => v,
+        Err(_) => "unknown".to_string(),
+    };
+    let cvc5_version = match get_solver_version(&args.verus_repo, "cvc5", "This is cvc5 version") {
+        Ok(v) => v,
+        Err(_) => "unknown".to_string(),
+    };
 
     // let verus_repo = Repository::open(args.verus_repo)?;
     // println!("Found repo with head {:?}, state {:?}, ", verus_repo.head()?.name().unwrap(), verus_repo.state());
@@ -72,19 +84,21 @@ fn main() -> anyhow::Result<()> {
     // Check that verus executable is present
     let verus_binary_path = args.verus_repo.join("source/target-verus/release/verus");
     if !fs::metadata(&verus_binary_path).is_ok() {
-        return Err(anyhow!("failed to find verus binary: {}", verus_binary_path.display()));
+        return Err(anyhow!(
+            "failed to find verus binary: {}",
+            verus_binary_path.display()
+        ));
     }
     info!("Found verus binary");
 
-    let run_configuration: RunConfiguration = toml::from_str(
-            &std::fs::read_to_string(&args.config).map_err(|e| {
-                anyhow!(
-                    "cannot read configuration file {}: {}",
-                    args.config.display(),
-                    e
-                )
-            })?,
-        )
+    let run_configuration: RunConfiguration =
+        toml::from_str(&std::fs::read_to_string(&args.config).map_err(|e| {
+            anyhow!(
+                "cannot read configuration file {}: {}",
+                args.config.display(),
+                e
+            )
+        })?)
         .map_err(|e| anyhow!("cannot parse run configuration: {}", e))?;
 
     info!("Loaded run configuration:");
@@ -95,10 +109,14 @@ fn main() -> anyhow::Result<()> {
     sh.set_var("VERUS_Z3_PATH", args.verus_repo.join("source/z3"));
     sh.set_var("VERUS_CVC5_PATH", args.verus_repo.join("source/cvc5"));
 
-//    let workdir = TempDir::new("verita")?;
-    let date = chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f").to_string();
-    let workdir =  std::env::temp_dir().join("verita").join(date);
-    //let mut project_summaries = Vec::new();
+    //    let workdir = TempDir::new("verita")?;
+    let date = chrono::Utc::now()
+        .format("%Y-%m-%d-%H-%M-%S-%3f")
+        .to_string();
+    let output_path = Path::new("output").join(&date);
+    std::fs::create_dir_all(&output_path);
+    let workdir = std::env::temp_dir().join("verita").join(&date);
+    let mut project_summaries = Vec::new();
     for project in run_configuration.projects.iter() {
         info!("running project {}", project.name);
 
@@ -106,32 +124,37 @@ fn main() -> anyhow::Result<()> {
         //let repo_path = workdir.path().join(&project.name);
         let repo_path = workdir.join(&project.name);
         let project_repo = Repository::clone(&project.git_url, &repo_path)?;
-        let (rev, _reference) = project_repo.revparse_ext(&project.refspec)
-        .map_err(|e| anyhow!("failed to find {}: {}", project.refspec, e))?;        
+        let (rev, _reference) = project_repo
+            .revparse_ext(&project.refspec)
+            .map_err(|e| anyhow!("failed to find {}: {}", project.refspec, e))?;
         project_repo.checkout_tree(&rev, None);
+        let hash = rev.id().to_string();
         sh.change_dir(repo_path);
 
         if let Some(prepare_script) = &project.prepare_script {
             let result = log_command(&mut cmd!(sh, "/bin/bash -c {prepare_script}").into())
-            .status()
-            .map_err(|e| anyhow!("cannot execute prepare script for {}: {}", &project.name, e))?;
+                .status()
+                .map_err(|e| {
+                    anyhow!("cannot execute prepare script for {}: {}", &project.name, e)
+                })?;
             //result.success_or_err()?;
         }
         let project_verification_start = std::time::Instant::now();
         let target = &project.crate_root;
         let output = log_command(
-            &mut cmd!(sh, "{verus_binary_path} --output-json --time --no-report-long-running {target}").into() 
+            &mut cmd!(
+                sh,
+                "{verus_binary_path} --output-json --time --no-report-long-running {target}"
+            )
+            .into(),
         )
         .args(run_configuration.verus_extra_args.iter().flatten())
         .args(project.extra_args.iter().flatten())
         .output()
         .map_err(|e| anyhow!("cannot execute verus on {}: {}", &project.name, e))?;
-        dbg!(output);
         let project_verification_duration = project_verification_start.elapsed();
-/* 
-        let project_run_configuration_digest = digest::obj_digest(&project);
-        let project_output_path_json = run_output_path
-            .join(project.name.to_owned() + "-" + &project_run_configuration_digest)
+        let project_output_path_json = output_path
+            .join(project.name.to_owned())
             .with_extension("json");
 
         let (output_json, verus_output) =
@@ -141,10 +164,7 @@ fn main() -> anyhow::Result<()> {
                         match serde_json::from_value(output_json.clone()) {
                             Ok(v) => Some(v),
                             Err(e) => {
-                                warn(&format!(
-                                    "cannot parse verus output for {}: {}",
-                                    &project.name, e
-                                ));
+                                error!("cannot parse verus output for {}: {}", &project.name, e);
                                 None
                             }
                         };
@@ -162,14 +182,13 @@ fn main() -> anyhow::Result<()> {
                         "verus_features": run_configuration.verus_features,
                         "run_configuration": project,
                         "verification_duration_ms": duration_ms_value,
+                        "z3_version": z3_version,
+                        "cvc5_version": cvc5_version,
                     });
                     (output_json, verus_output)
                 }
                 Err(e) => {
-                    warn(&format!(
-                        "cannot parse verus output for {}: {}",
-                        &project.name, e
-                    ));
+                    error!("cannot parse verus output for {}: {}", &project.name, e);
                     (
                         serde_json::json!({
                             "runner": {
@@ -186,16 +205,15 @@ fn main() -> anyhow::Result<()> {
             &project_output_path_json,
             serde_json::to_string_pretty(&output_json).unwrap(),
         )
-        .map_err(|e| format!("cannot write output json: {}", e))?;
+        .map_err(|e| anyhow!("cannot write output json: {}", e))?;
 
         project_summaries.push((
             project.clone(),
             output.status.success(),
-            proj_checkout.hash,
+            hash,
             project_verification_duration,
             verus_output,
         ));
-        */
     }
 
     // For each project, create a temporary directory, checkout the repo, and execute stuff
