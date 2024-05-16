@@ -1,4 +1,5 @@
 use crate::config::RunConfiguration;
+use anyhow::anyhow;
 use clap::Parser as ClapParser;
 use regex::Regex;
 use std::path::PathBuf;
@@ -25,17 +26,17 @@ fn get_z3_version(verus_repo: &PathBuf) -> anyhow::Result<String> {
     let sh = Shell::new()?;
     let output = cmd!(sh, "{verus_repo}/source/z3 --version") //.quiet().run()?;
         .output()?;
-    dbg!(output);
+    dbg!(&output);
     let output_str = String::from_utf8(output.stdout)?;
     let v = Regex::new(r"^Z3 version ([0-9.]*) ")?
         .captures(&output_str)
-        .ok_or_else(|| "Failed to find Z3 version")
+        .ok_or_else(|| anyhow!("Failed to find Z3 version"))?
+        .get(1)
         .expect("missing capture group")
-        .get(1)?
         .as_str()
         .to_string();
-
-    Ok("z3".to_string())
+    println!("Found Z3 version: {v}");
+    Ok(v)
 }
 
 fn run(run_configuration_path: &PathBuf) -> Result<(), String> {
