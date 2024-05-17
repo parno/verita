@@ -23,6 +23,9 @@ struct Args {
     singular: Option<PathBuf>,
     /// Path to a run configuration file
     config: PathBuf,
+    /// Label for the run
+    #[arg(short, long)]
+    label: String,
     /// Print debugging output (can be repeated for more detail)
     #[arg(short = 'd', long = "debug", action = clap::ArgAction::Count)]
     debug_level: u8,
@@ -201,6 +204,7 @@ fn main() -> anyhow::Result<()> {
                         "verification_duration_ms": duration_ms_value,
                         "z3_version": z3_version,
                         "cvc5_version": cvc5_version,
+                        "label": args.label,
                     });
                     (output_json, verus_output)
                 }
