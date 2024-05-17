@@ -18,6 +18,9 @@ struct Args {
     /// Base of the Verus repository
     #[arg(short, long)]
     verus_repo: PathBuf,
+    /// Path to the Singular algebra solver
+    #[arg(short, long)]
+    singular: Option<PathBuf>,
     /// Path to a run configuration file
     config: PathBuf,
     /// Print debugging output (can be repeated for more detail)
@@ -107,6 +110,17 @@ fn main() -> anyhow::Result<()> {
     let sh = Shell::new()?;
     sh.set_var("VERUS_Z3_PATH", verus_repo.join("source/z3"));
     sh.set_var("VERUS_CVC5_PATH", verus_repo.join("source/cvc5"));
+
+    // If the Singular option is provided, confirm the binary exists and set the environment variable
+    if let Some(p) = args.singular {
+        if fs::metadata(&p).is_err() {
+            return Err(anyhow!(
+                "failed to find specified Singular binary: {}",
+                p.display()
+            ));
+        }
+        sh.set_var("VERUS_SINGULAR_PATH", p);
+    }
 
     let date = chrono::Utc::now()
         .format("%Y-%m-%d-%H-%M-%S-%3f")
