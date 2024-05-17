@@ -47,7 +47,7 @@ fn get_solver_version(
     Ok(v)
 }
 
-pub fn log_command(cmd: &mut std::process::Command) -> &mut std::process::Command {
+pub fn log_command(cmd: std::process::Command) -> std::process::Command {
     info!("running: {:?}", &cmd);
     cmd
 }
@@ -138,7 +138,7 @@ fn main() -> anyhow::Result<()> {
         sh.change_dir(repo_path);
 
         if let Some(prepare_script) = &project.prepare_script {
-            log_command(&mut cmd!(sh, "/bin/bash -c {prepare_script}").into())
+            log_command(cmd!(sh, "/bin/bash -c {prepare_script}").into())
                 .status()
                 .map_err(|e| {
                     anyhow!("cannot execute prepare script for {}: {}", &project.name, e)
@@ -147,20 +147,18 @@ fn main() -> anyhow::Result<()> {
         let project_verification_start = std::time::Instant::now();
         let target = &project.crate_root;
         let output = log_command(
-            &mut cmd!(
+            cmd!(
                 sh,
                 "{verus_binary_path} --output-json --time --no-report-long-running {target}"
             )
+            .args(run_configuration.verus_extra_args.iter().flatten())
+            .args(project.extra_args.iter().flatten())
             .into(),
         )
-        .args(run_configuration.verus_extra_args.iter().flatten())
-        .args(project.extra_args.iter().flatten())
         .output()
         .map_err(|e| anyhow!("cannot execute verus on {}: {}", &project.name, e))?;
         let project_verification_duration = project_verification_start.elapsed();
-        let project_output_path_json = output_path
-            .join(&project.name)
-            .with_extension("json");
+        let project_output_path_json = output_path.join(&project.name).with_extension("json");
 
         let (output_json, verus_output) =
             match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
