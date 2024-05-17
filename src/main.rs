@@ -205,6 +205,7 @@ fn main() -> anyhow::Result<()> {
                         "z3_version": z3_version,
                         "cvc5_version": cvc5_version,
                         "label": args.label,
+                        "data": date,
                     });
                     (output_json, verus_output)
                 }
