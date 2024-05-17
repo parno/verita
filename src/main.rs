@@ -66,12 +66,13 @@ fn main() -> anyhow::Result<()> {
             _ => tracing::Level::TRACE,
         })
         .init();
+    let verus_repo = std::fs::canonicalize(args.verus_repo)?;
 
-    let z3_version = match get_solver_version(&args.verus_repo, "z3", "Z3 version") {
+    let z3_version = match get_solver_version(&verus_repo, "z3", "Z3 version") {
         Ok(v) => v,
         Err(_) => "unknown".to_string(),
     };
-    let cvc5_version = match get_solver_version(&args.verus_repo, "cvc5", "This is cvc5 version") {
+    let cvc5_version = match get_solver_version(&verus_repo, "cvc5", "This is cvc5 version") {
         Ok(v) => v,
         Err(_) => "unknown".to_string(),
     };
@@ -80,7 +81,7 @@ fn main() -> anyhow::Result<()> {
     // println!("Found repo with head {:?}, state {:?}, ", verus_repo.head()?.name().unwrap(), verus_repo.state());
 
     // Check that verus executable is present
-    let verus_binary_path = args.verus_repo.join("source/target-verus/release/verus");
+    let verus_binary_path = verus_repo.join("source/target-verus/release/verus");
     if fs::metadata(&verus_binary_path).is_err() {
         return Err(anyhow!(
             "failed to find verus binary: {}",
@@ -104,8 +105,8 @@ fn main() -> anyhow::Result<()> {
 
     info!("Running projects");
     let sh = Shell::new()?;
-    sh.set_var("VERUS_Z3_PATH", args.verus_repo.join("source/z3"));
-    sh.set_var("VERUS_CVC5_PATH", args.verus_repo.join("source/cvc5"));
+    sh.set_var("VERUS_Z3_PATH", verus_repo.join("source/z3"));
+    sh.set_var("VERUS_CVC5_PATH", verus_repo.join("source/cvc5"));
 
     let date = chrono::Utc::now()
         .format("%Y-%m-%d-%H-%M-%S-%3f")
