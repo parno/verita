@@ -6,7 +6,6 @@ use git2::Repository;
 use regex::Regex;
 use std::{fs, path::Path, path::PathBuf};
 use tempdir::TempDir;
-use toml;
 use tracing::{error, info}; // debug, trace
 use xshell::{cmd, Shell};
 
@@ -82,7 +81,7 @@ fn main() -> anyhow::Result<()> {
 
     // Check that verus executable is present
     let verus_binary_path = args.verus_repo.join("source/target-verus/release/verus");
-    if !fs::metadata(&verus_binary_path).is_ok() {
+    if fs::metadata(&verus_binary_path).is_err() {
         return Err(anyhow!(
             "failed to find verus binary: {}",
             verus_binary_path.display()
@@ -159,7 +158,7 @@ fn main() -> anyhow::Result<()> {
         .map_err(|e| anyhow!("cannot execute verus on {}: {}", &project.name, e))?;
         let project_verification_duration = project_verification_start.elapsed();
         let project_output_path_json = output_path
-            .join(project.name.to_owned())
+            .join(&project.name)
             .with_extension("json");
 
         let (output_json, verus_output) =
