@@ -39,6 +39,7 @@ class Project:
         self.total_solved = json["verification-results"]["verified"]
         self.errors = json["verification-results"]["errors"]
         self.run_label = json["runner"]["label"]
+        self.date = json["runner"]["date"]
 
         # Collect SMT times
         self.fn_smt_times = []
@@ -65,6 +66,7 @@ class Run:
         self.directory = directory
         self.projects = read_json_files_into_projects(directory)
         self.label = self.projects[0].run_label
+        self.date = self.projects[0].date
 
     def get_smt_times(self):
         return [f.time_ms for project in self.projects for f in project.fn_smt_times]
@@ -76,7 +78,7 @@ class Run:
         total_solved = sum([project.total_solved for project in self.projects])
         errors = sum([project.errors for project in self.projects])
 
-        plot_survival_curve(self.get_smt_times(), f'{self.label} ({os.path.basename(self.directory)})', total_solved, errors)
+        plot_survival_curve(self.get_smt_times(), f'{self.label} ({self.date})', total_solved, errors)
 
     def plot_survival_curves(self):
         self.plot_survival_curve()

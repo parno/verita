@@ -128,7 +128,7 @@ fn main() -> anyhow::Result<()> {
     let date = chrono::Utc::now()
         .format("%Y-%m-%d-%H-%M-%S-%3f")
         .to_string();
-    let output_path = Path::new("output").join(&date);
+    let output_path = Path::new("output").join(format!("{}-{}", &date, &args.label));
     let tmp_dir = TempDir::new("verita")?;
     let perm_temp_dir = std::env::temp_dir().join("verita").join(&date);
     std::fs::create_dir_all(&output_path)?;
