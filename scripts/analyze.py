@@ -39,7 +39,7 @@ class Project:
         self.total_solved = json["verification-results"]["verified"]
         self.errors = json["verification-results"]["errors"]
         self.run_label = json["runner"]["label"]
-        self.date = json["runner"]["date"]
+        self.date = json["runner"]["date"] if "date" in json["runner"] else json["runner"]["data"]
 
         # Collect SMT times
         self.fn_smt_times = []
@@ -68,29 +68,79 @@ class Run:
         self.label = self.projects[0].run_label
         self.date = self.projects[0].date
 
+        self.total_solved = sum([project.total_solved for project in self.projects])
+        self.errors = sum([project.errors for project in self.projects])
+
     def get_smt_times(self):
         return [f.time_ms for project in self.projects for f in project.fn_smt_times]
 
     def __str__(self):
         return f'{self.project} <{self.time_ms}>'
 
-    def plot_survival_curve(self):
-        total_solved = sum([project.total_solved for project in self.projects])
-        errors = sum([project.errors for project in self.projects])
+    def get_project_names(self):
+        return [project.name for project in self.projects]
+    
+    def get_project(self, name):
+        for project in self.projects:
+            if project.name == name:
+                return project
+        return None
 
-        plot_survival_curve(self.get_smt_times(), f'{self.label} ({self.date})', total_solved, errors)
+    def plot_survival_curve(self):
+        plot_survival_curve(self.get_smt_times(), f'{self.label} ({self.date})', self.total_solved, self.errors)
 
     def plot_survival_curves(self):
         self.plot_survival_curve()
         for project in self.projects:
             project.plot_survival_curve()
 
+def plot_runs(name, runs):
+    for run in runs:
+        # Calculate survival curve
+        times = run.get_smt_times()
+        perf = np.array(np.sort(times))
+        cdf = np.cumsum(perf)
+        label = f"{run.label} ({run.total_solved} solved; {run.errors} errors)"
+        plt.plot(cdf, np.arange(0, len(cdf)), label=label, linestyle="solid")
+    plt.legend()
+    plt.ylim(0)
+    plt.xlim(0.1)
+    plt.xscale("log")
+    plt.xlabel("Time Log Scale (ms)")
+    plt.ylabel("Instances Soveld")
+    plt.grid()
+    os.makedirs("fig/survival", exist_ok=True)
+    plt.savefig(f"fig/survival/{name}.pdf")
+    plt.close()
+
+def plot_runs_per_project(runs):
+    for project_name in sorted(runs[0].get_project_names()):
+        for run in runs:
+            # Calculate survival curve
+            times = run.get_project(project_name).get_smt_times()
+            perf = np.array(np.sort(times))
+            cdf = np.cumsum(perf)
+            label = f"{run.label} ({run.total_solved} solved; {run.errors} errors)"
+            plt.plot(cdf, np.arange(0, len(cdf)), label=label, linestyle="solid")
+        plt.legend()
+        plt.ylim(0)
+        plt.xlim(0.1)
+        plt.title(project_name)
+        plt.xscale("log")
+        plt.xlabel("Time Log Scale (ms)")
+        plt.ylabel("Instances Soveld")
+        plt.grid()
+        os.makedirs("fig/survival", exist_ok=True)
+        plt.savefig(f"fig/survival/{project_name}.pdf")
+        plt.close()
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('dirs', nargs='+', required=True, help='One or more directories of results to analyze')
+    parser.add_argument('dirs', nargs='+', help='One or more directories of results to analyze')
     args = parser.parse_args()
 
     runs = [Run(d) for d in args.dirs]
+    plot_runs("all", runs)
 
 if __name__ == '__main__':
     main()
