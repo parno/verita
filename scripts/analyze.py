@@ -50,6 +50,9 @@ class Project:
     def __str__(self):
         return f'{self.name} <{self.refspec}>'
 
+    def get_smt_times(self):
+        return [f.time_ms for f in self.fn_smt_times]
+
     def plot_survival_curve(self):
         plot_survival_curve([f.time_ms for f in self.fn_smt_times], self.name, self.total_solved, self.errors)
 
@@ -141,6 +144,7 @@ def main():
 
     runs = [Run(d) for d in args.dirs]
     plot_runs("all", runs)
+    plot_runs_per_project(runs)
 
 if __name__ == '__main__':
     main()
