@@ -4,6 +4,7 @@ import argparse
 import json
 import glob
 from matplotlib import pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
 import os
 
@@ -97,7 +98,8 @@ class Run:
         for project in self.projects:
             project.plot_survival_curve()
 
-def plot_runs(name, runs):
+def plot_runs_overall(pdf, name, runs):
+    plt.figure()
     for run in runs:
         # Calculate survival curve
         times = run.get_smt_times()
@@ -108,22 +110,23 @@ def plot_runs(name, runs):
     plt.legend()
     plt.ylim(0)
     plt.xlim(0.1)
+    plt.title(name)
     plt.xscale("log")
     plt.xlabel("Time Log Scale (ms)")
-    plt.ylabel("Instances Soveld")
+    plt.ylabel("Instances Solved")
     plt.grid()
-    os.makedirs("fig/survival", exist_ok=True)
-    plt.savefig(f"fig/survival/{name}.pdf")
-    plt.close()
+    pdf.savefig()
 
-def plot_runs_per_project(runs):
+def plot_runs_per_project(pdf, runs):
     for project_name in sorted(runs[0].get_project_names()):
+        plt.figure()
         for run in runs:
             # Calculate survival curve
-            times = run.get_project(project_name).get_smt_times()
+            project = run.get_project(project_name)
+            times = project.get_smt_times()
             perf = np.array(np.sort(times))
             cdf = np.cumsum(perf)
-            label = f"{run.label} ({run.total_solved} solved; {run.errors} errors)"
+            label = f"{run.label} ({project.total_solved} solved; {project.errors} errors)"
             plt.plot(cdf, np.arange(0, len(cdf)), label=label, linestyle="solid")
         plt.legend()
         plt.ylim(0)
@@ -131,11 +134,9 @@ def plot_runs_per_project(runs):
         plt.title(project_name)
         plt.xscale("log")
         plt.xlabel("Time Log Scale (ms)")
-        plt.ylabel("Instances Soveld")
+        plt.ylabel("Instances Solved")
         plt.grid()
-        os.makedirs("fig/survival", exist_ok=True)
-        plt.savefig(f"fig/survival/{project_name}.pdf")
-        plt.close()
+        pdf.savefig()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -143,8 +144,10 @@ def main():
     args = parser.parse_args()
 
     runs = [Run(d) for d in args.dirs]
-    plot_runs("all", runs)
-    plot_runs_per_project(runs)
+    os.makedirs("fig/survival", exist_ok=True)
+    with PdfPages('fig/survival/results.pdf') as pdf:
+        plot_runs_overall(pdf, "all projects", runs)
+        plot_runs_per_project(pdf, runs)
 
 if __name__ == '__main__':
     main()
