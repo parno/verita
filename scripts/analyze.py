@@ -108,7 +108,7 @@ def plot_runs_overall(pdf, name, runs):
         times = run.get_smt_times()
         perf = np.array(np.sort(times))
         cdf = np.cumsum(perf)
-        label = f"{run.label} ({run.total_solved} solved; {run.errors} errors)"
+        label = f"{run.label} ({run.total_solved} verified; {run.errors} errors)"
         plt.plot(cdf, np.arange(0, len(cdf)), label=label, linestyle="solid")
     plt.legend()
     plt.ylim(0)
@@ -116,7 +116,7 @@ def plot_runs_overall(pdf, name, runs):
     plt.title(name)
     plt.xscale("log")
     plt.xlabel("Time Log Scale (ms)")
-    plt.ylabel("Instances Solved")
+    plt.ylabel("Functions Verified")
     plt.grid()
     pdf.savefig()
 
@@ -129,7 +129,7 @@ def plot_runs_per_project(pdf, runs):
             times = project.get_smt_times()
             perf = np.array(np.sort(times))
             cdf = np.cumsum(perf)
-            label = f"{run.label} ({project.total_solved} solved; {project.errors} errors)"
+            label = f"{run.label} ({project.total_solved} verified; {project.errors} errors)"
             plt.plot(cdf, np.arange(0, len(cdf)), label=label, linestyle="solid")
         plt.legend()
         plt.ylim(0)
@@ -137,7 +137,7 @@ def plot_runs_per_project(pdf, runs):
         plt.title(project_name)
         plt.xscale("log")
         plt.xlabel("Time Log Scale (ms)")
-        plt.ylabel("Instances Solved")
+        plt.ylabel("Functions Verified")
         plt.grid()
         pdf.savefig()
 
