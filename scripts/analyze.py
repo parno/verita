@@ -28,6 +28,7 @@ class FunctionSmtTime:
     def __init__(self, json):
         self.name = json["function"]
         self.time_ms = json["time"]
+        self.success = json["success"]
 
     def __str__(self):
         return f'{self.name} <{self.time_ms}>'
@@ -48,14 +49,16 @@ class Project:
             for function in item["function-breakdown"]:
                 self.fn_smt_times.append(FunctionSmtTime(function))
 
+        print(f"Total errors: {self.errors}; counted errors: {len([f for f in self.fn_smt_times if not f.success])}")
+
     def __str__(self):
         return f'{self.name} <{self.refspec}>'
 
     def get_smt_times(self):
-        return [f.time_ms for f in self.fn_smt_times]
+        return [f.time_ms for f in self.fn_smt_times if f.success]
 
     def plot_survival_curve(self):
-        plot_survival_curve([f.time_ms for f in self.fn_smt_times], self.name, self.total_solved, self.errors)
+        plot_survival_curve(self.get_smt_times(), self.name, self.total_solved, self.errors)
 
 
 def read_json_files_into_projects(directory):
@@ -76,7 +79,7 @@ class Run:
         self.errors = sum([project.errors for project in self.projects])
 
     def get_smt_times(self):
-        return [f.time_ms for project in self.projects for f in project.fn_smt_times]
+        return [f.time_ms for project in self.projects for f in project.fn_smt_times if f.success]
 
     def __str__(self):
         return f'{self.project} <{self.time_ms}>'

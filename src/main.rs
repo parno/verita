@@ -184,7 +184,8 @@ fn main() -> anyhow::Result<()> {
                         match serde_json::from_value(output_json.clone()) {
                             Ok(v) => Some(v),
                             Err(e) => {
-                                error!("cannot parse verus output for {}: {}", &project.name, e);
+                                error!("cannot parse verus json output for {}: {}", &project.name, e);
+                                error!("got: {:?}", output_json);
                                 None
                             }
                         };
@@ -211,6 +212,7 @@ fn main() -> anyhow::Result<()> {
                 }
                 Err(e) => {
                     error!("cannot parse verus output for {}: {}", &project.name, e);
+                    error!("got: {}", &String::from_utf8(output.stdout)?);
                     (
                         serde_json::json!({
                             "runner": {
