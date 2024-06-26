@@ -28,7 +28,10 @@ class FunctionSmtTime:
     def __init__(self, json):
         self.name = json["function"]
         self.time_ms = json["time"]
-        self.success = json["success"]
+        if "success" in json:
+            self.success = json["success"]
+        else:
+            print(f"Failed to find a success entry in {json}")
 
     def __str__(self):
         return f'{self.name} <{self.time_ms}>'
