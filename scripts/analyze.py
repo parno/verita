@@ -32,6 +32,7 @@ class FunctionSmtTime:
             self.success = json["success"]
         else:
             print(f"Failed to find a success entry in {json}")
+            self.success = False
 
     def __str__(self):
         return f'{self.name} <{self.time_ms}>'
@@ -41,16 +42,23 @@ class Project:
         self.name = json["runner"]["run_configuration"]["name"]
         self.refspec = json["runner"]["run_configuration"]["refspec"]
         self.times_ms = json["times-ms"]
-        self.total_solved = json["verification-results"]["verified"]
-        self.errors = json["verification-results"]["errors"]
+        if "verified" in json["verification-results"]:
+            self.total_solved = json["verification-results"]["verified"]
+        else:
+            self.total_solved = 0
+        if "errors" in json["verification-results"]:
+            self.errors = json["verification-results"]["errors"]
+        else:
+            self.errors = 0
         self.run_label = json["runner"]["label"]
         self.date = json["runner"]["date"] if "date" in json["runner"] else json["runner"]["data"]
 
         # Collect SMT times
         self.fn_smt_times = []
-        for item in self.times_ms["smt"]["smt-run-module-times"]:
-            for function in item["function-breakdown"]:
-                self.fn_smt_times.append(FunctionSmtTime(function))
+        if "smt" in self.times_ms:
+            for item in self.times_ms["smt"]["smt-run-module-times"]:
+                for function in item["function-breakdown"]:
+                    self.fn_smt_times.append(FunctionSmtTime(function))
 
         print(f"Total errors: {self.errors}; counted errors: {len([f for f in self.fn_smt_times if not f.success])}")
 
