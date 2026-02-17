@@ -1,6 +1,7 @@
 verus_git_url = "https://github.com/verus-lang/verus.git"
 verus_refspec = "main"
 verus_features = ["singular"]
+flags = ["--no-report-long-running"]
 
 [[project]]
 name = "ironkv"
@@ -16,6 +17,7 @@ refspec = "main"
 crate_root = "verus-mimalloc/lib.rs"
 extra_args = [
     "--extern", "libc=build/liblibc.rlib",
+    "--triggers-mode", "silent",
     "--rlimit", "240",
 ]
 prepare_script = """
@@ -30,35 +32,42 @@ cp $LIBC_RLIB_NAME build/liblibc.rlib
 
 [[project]]
 name = "page-table"
-git_url = "https://github.com/parno/verified-nrkernel.git"
+git_url = "https://github.com/matthias-brun/verified-nrkernel.git"
 refspec = "main"
 crate_root = "page-table/src/lib.rs"
 extra_args = ["--crate-type=lib", "--rlimit", "60", "--cfg", "feature=\"impl\""]
 
 [[project]]
-name = "verified-storage-pmemlog"
+name = "verified-storage"
 git_url = "https://github.com/microsoft/verified-storage.git"
 refspec = "main"
 crate_root = "pmemlog/src/lib.rs"
-extra_args = [
-    "-L", "dependency=deps_hack/target/debug/deps",
-    "--extern=deps_hack=deps_hack/target/debug/libdeps_hack.rlib",
-]
-prepare_script = """
-DEBIAN_FRONTEND=noninteractive apt-get update; apt-get install -y libpmem1 libpmemlog1 libpmem-dev libpmemlog-dev llvm-dev clang libclang-dev # verified-storage
-cd pmsafe
-cargo clean
-cargo build 
-cd ..
-
-cd deps_hack
-cargo clean
-cargo +1.76 build
-"""
 
 [[project]]
 name = "node-replication"
-git_url = "https://github.com/achreto/verified-node-replication.git"
+git_url = "https://github.com/verus-lang/verified-node-replication.git"
 refspec = "main"
 crate_root = "verified-node-replication/src/lib.rs"
 extra_args = ["--crate-type=dylib"]
+
+[[project]]
+name = "vest"
+git_url = "https://github.com/secure-foundations/vest.git"
+refspec = "main"
+crate_root = ""
+extra_args = []
+
+[[project]]
+name = "anvil"
+git_url = "https://github.com/anvil-verifier/anvil.git tmp\anvil"
+refspec = "main"
+crate_root = ""
+extra_args = []
+prepare_script = """
+pushd src/deps_hack
+cargo clean
+cargo +1.92.0 build -v
+popd
+"""
+
+
