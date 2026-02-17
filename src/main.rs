@@ -26,7 +26,8 @@ struct Args {
     /// Label for the run
     #[arg(short, long)]
     label: String,
-    /// Print debugging output (can be repeated for more detail)
+    /// Print debugging output (can be repeated for more detail).
+    /// This will also cause verita to retain the project repos it clones.
     #[arg(short = 'd', long = "debug", action = clap::ArgAction::Count)]
     debug_level: u8,
 }
@@ -139,6 +140,7 @@ fn main() -> anyhow::Result<()> {
         // Use a directory that will be automatically reclaimed after we terminate
         tmp_dir.path()
     };
+    dbg!(&workdir);
     let mut project_summaries = Vec::new();
     for project in run_configuration.projects.iter() {
         info!("running project {}", project.name);
@@ -240,6 +242,5 @@ fn main() -> anyhow::Result<()> {
         ));
     }
 
-    // For each project, create a temporary directory, checkout the repo, and execute stuff
     Ok(())
 }

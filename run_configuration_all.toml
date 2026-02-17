@@ -21,7 +21,7 @@ extra_args = [
 prepare_script = """
 pushd test_libc
 cargo clean
-cargo +1.76.0 build --release
+cargo +1.82.0 build --release
 popd
 LIBC_RLIB_NAME=$(find ./test_libc/target/release/deps/ -name 'liblibc-*.rlib')
 mkdir -p build
@@ -30,16 +30,16 @@ cp $LIBC_RLIB_NAME build/liblibc.rlib
 
 [[project]]
 name = "page-table"
-git_url = "https://github.com/utaal/verified-nrkernel.git"
+git_url = "https://github.com/parno/verified-nrkernel.git"
 refspec = "main"
-crate_root = "page-table/main.rs"
-extra_args = ["--rlimit", "60"]
+crate_root = "page-table/src/lib.rs"
+extra_args = ["--crate-type=lib", "--rlimit", "60", "--cfg", "feature=\"impl\""]
 
 [[project]]
-name = "verified-storage"
+name = "verified-storage-pmemlog"
 git_url = "https://github.com/microsoft/verified-storage.git"
 refspec = "main"
-crate_root = "storage_node/src/lib.rs"
+crate_root = "pmemlog/src/lib.rs"
 extra_args = [
     "-L", "dependency=deps_hack/target/debug/deps",
     "--extern=deps_hack=deps_hack/target/debug/libdeps_hack.rlib",
