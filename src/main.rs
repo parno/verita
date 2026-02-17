@@ -163,83 +163,101 @@ fn main() -> anyhow::Result<()> {
                     anyhow!("cannot execute prepare script for {}: {}", &project.name, e)
                 })?;
         }
-        let project_verification_start = std::time::Instant::now();
-        let target = &project.crate_root;
-        let output = log_command(
-            cmd!(
-                sh,
-                "{verus_binary_path} --output-json --time --no-report-long-running {target}"
+        for (target_index, target) in project.crate_roots.iter().enumerate() {
+            info!("running target {target} ({} of {})", target_index + 1, project.crate_roots.len());
+            let project_verification_start = std::time::Instant::now();
+            let output = log_command(
+                cmd!(
+                    sh,
+                    "{verus_binary_path} --output-json --time --no-report-long-running {target}"
+                )
+                .args(run_configuration.verus_extra_args.iter().flatten())
+                .args(project.extra_args.iter().flatten())
+                .into(),
             )
-            .args(run_configuration.verus_extra_args.iter().flatten())
-            .args(project.extra_args.iter().flatten())
-            .into(),
-        )
-        .output()
-        .map_err(|e| anyhow!("cannot execute verus on {}: {}", &project.name, e))?;
-        let project_verification_duration = project_verification_start.elapsed();
-        let project_output_path_json = output_path.join(&project.name).with_extension("json");
+            .output()
+            .map_err(|e| anyhow!("cannot execute verus on {}: {}", &project.name, e))?;
+            let project_verification_duration = project_verification_start.elapsed();
 
-        let (output_json, verus_output) =
-            match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
-                Ok(mut output_json) => {
-                    let verus_output: Option<VerusOutput> =
-                        match serde_json::from_value(output_json.clone()) {
-                            Ok(v) => Some(v),
-                            Err(e) => {
-                                error!("cannot parse verus json output for {}: {}", &project.name, e);
-                                error!("got: {:?}", output_json);
-                                None
-                            }
-                        };
-                    let duration_ms_value = serde_json::Value::Number(
-                        serde_json::Number::from_f64(
-                            project_verification_duration.as_millis() as f64
-                        )
-                        .expect("valid verus_build_duration"),
-                    );
-                    output_json["runner"] = serde_json::json!({
-                        "success": output.status.success(),
-                        "stderr": String::from_utf8_lossy(&output.stderr),
-                        "verus_git_url": run_configuration.verus_git_url,
-                        "verus_refspec": run_configuration.verus_refspec,
-                        "verus_features": run_configuration.verus_features,
-                        "run_configuration": project,
-                        "verification_duration_ms": duration_ms_value,
-                        "z3_version": z3_version,
-                        "cvc5_version": cvc5_version,
-                        "label": args.label,
-                        "date": date,
-                    });
-                    (output_json, verus_output)
-                }
-                Err(e) => {
-                    error!("cannot parse verus output for {}: {}", &project.name, e);
-                    error!("got: {}", &String::from_utf8(output.stdout)?);
-                    (
-                        serde_json::json!({
-                            "runner": {
-                                "success": output.status.success(),
-                                "stderr": String::from_utf8_lossy(&output.stderr),
-                                "invalid_output_json": true,
-                            }
-                        }),
-                        None,
-                    )
+            // Build output filename: use project name alone for single targets,
+            // or "project-crate-root-dir" for multiple targets
+            let output_name = if project.crate_roots.len() == 1 {
+                project.name.clone()
+            } else {
+                let dir = Path::new(target)
+                    .parent()
+                    .map(|p| p.to_string_lossy().replace('/', "-"))
+                    .unwrap_or_default();
+                if dir.is_empty() {
+                    project.name.clone()
+                } else {
+                    format!("{}-{}", project.name, dir)
                 }
             };
-        std::fs::write(
-            &project_output_path_json,
-            serde_json::to_string_pretty(&output_json).unwrap(),
-        )
-        .map_err(|e| anyhow!("cannot write output json: {}", e))?;
+            let project_output_path_json = output_path.join(&output_name).with_extension("json");
 
-        project_summaries.push((
-            project.clone(),
-            output.status.success(),
-            hash,
-            project_verification_duration,
-            verus_output,
-        ));
+            let (output_json, verus_output) =
+                match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+                    Ok(mut output_json) => {
+                        let verus_output: Option<VerusOutput> =
+                            match serde_json::from_value(output_json.clone()) {
+                                Ok(v) => Some(v),
+                                Err(e) => {
+                                    error!("cannot parse verus json output for {}: {}", &project.name, e);
+                                    error!("got: {:?}", output_json);
+                                    None
+                                }
+                            };
+                        let duration_ms_value = serde_json::Value::Number(
+                            serde_json::Number::from_f64(
+                                project_verification_duration.as_millis() as f64
+                            )
+                            .expect("valid verus_build_duration"),
+                        );
+                        output_json["runner"] = serde_json::json!({
+                            "success": output.status.success(),
+                            "stderr": String::from_utf8_lossy(&output.stderr),
+                            "verus_git_url": run_configuration.verus_git_url,
+                            "verus_refspec": run_configuration.verus_refspec,
+                            "verus_features": run_configuration.verus_features,
+                            "run_configuration": project,
+                            "verification_duration_ms": duration_ms_value,
+                            "z3_version": z3_version,
+                            "cvc5_version": cvc5_version,
+                            "label": args.label,
+                            "date": date,
+                        });
+                        (output_json, verus_output)
+                    }
+                    Err(e) => {
+                        error!("cannot parse verus output for {}: {}", &project.name, e);
+                        error!("got: {}", &String::from_utf8(output.stdout)?);
+                        (
+                            serde_json::json!({
+                                "runner": {
+                                    "success": output.status.success(),
+                                    "stderr": String::from_utf8_lossy(&output.stderr),
+                                    "invalid_output_json": true,
+                                }
+                            }),
+                            None,
+                        )
+                    }
+                };
+            std::fs::write(
+                &project_output_path_json,
+                serde_json::to_string_pretty(&output_json).unwrap(),
+            )
+            .map_err(|e| anyhow!("cannot write output json: {}", e))?;
+
+            project_summaries.push((
+                project.clone(),
+                output.status.success(),
+                hash.clone(),
+                project_verification_duration,
+                verus_output,
+            ));
+        }
     }
 
     Ok(())

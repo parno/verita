@@ -5,7 +5,7 @@ pub struct RunConfigurationProject {
     pub name: String,
     pub git_url: String,
     pub refspec: String,
-    pub crate_root: String,
+    pub crate_roots: Vec<String>,
     pub extra_args: Option<Vec<String>>,
     pub prepare_script: Option<String>,
 }
