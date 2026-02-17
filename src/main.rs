@@ -418,7 +418,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     let mut project_summaries = Vec::new();
-    let mut failed_projects: Vec<String> = Vec::new();
+    let mut failed_projects: Vec<(String, Option<PathBuf>)> = Vec::new();
     let mut succeeded_projects: Vec<String> = Vec::new();
 
     for project in run_configuration.projects.iter() {
@@ -426,6 +426,7 @@ fn main() -> anyhow::Result<()> {
             Ok((summaries, any_verus_failure)) => {
                 // If any target had Verus failures and we're in auto-cleanup mode,
                 // preserve the repo for debugging
+                let mut preserved_path = None;
                 if any_verus_failure && args.debug_level == 0 {
                     let src = workdir.join(&project.name);
                     let dest = perm_temp_dir.join(&project.name);
@@ -448,13 +449,16 @@ fn main() -> anyhow::Result<()> {
                                     project.name,
                                     dest.display()
                                 );
+                                preserved_path = Some(dest);
                             }
                         }
                     }
+                } else if any_verus_failure && args.debug_level > 0 {
+                    preserved_path = Some(workdir.join(&project.name));
                 }
 
                 if any_verus_failure {
-                    failed_projects.push(project.name.clone());
+                    failed_projects.push((project.name.clone(), preserved_path));
                 } else {
                     succeeded_projects.push(project.name.clone());
                 }
@@ -462,7 +466,7 @@ fn main() -> anyhow::Result<()> {
             }
             Err(e) => {
                 error!("Failed to process project {}: {}", project.name, e);
-                failed_projects.push(project.name.clone());
+                failed_projects.push((project.name.clone(), None));
                 // Write an error JSON so the failure is recorded in output
                 let error_json = serde_json::json!({
                     "runner": {
@@ -495,7 +499,14 @@ fn main() -> anyhow::Result<()> {
         println!("Succeeded ({}): {}", succeeded_projects.len(), succeeded_projects.join(", "));
     }
     if !failed_projects.is_empty() {
-        println!("Failed ({}): {}", failed_projects.len(), failed_projects.join(", "));
+        println!("Failed ({}):", failed_projects.len());
+        for (name, preserved_path) in &failed_projects {
+            if let Some(path) = preserved_path {
+                println!("  {} (repo preserved at: {})", name, path.display());
+            } else {
+                println!("  {}", name);
+            }
+        }
     }
     println!("Output: {}", output_path.display());
 
