@@ -41,7 +41,8 @@ extra_args = ["--crate-type=lib", "--rlimit", "60", "--cfg", "feature=\"impl\""]
 name = "verified-storage"
 git_url = "https://github.com/microsoft/verified-storage.git"
 refspec = "main"
-crate_roots = ["pmemlog/src/lib.rs"]
+cargo-verus = true
+crate_roots = ["capybaraKV", "multilog", "pmemlog"]
 
 [[project]]
 name = "node-replication"
@@ -54,15 +55,18 @@ extra_args = ["--crate-type=dylib"]
 name = "vest"
 git_url = "https://github.com/secure-foundations/vest.git"
 refspec = "main"
-crate_roots = [""]
-extra_args = []
+cargo-verus = true
+crate_roots = ["vest", "vest-examples"]
 
 [[project]]
 name = "anvil"
-git_url = "https://github.com/anvil-verifier/anvil.git tmp\anvil"
+git_url = "https://github.com/anvil-verifier/anvil"
 refspec = "main"
-crate_roots = [""]
-extra_args = []
+crate_roots = ["src/vdeployment_admission_controller.rs"]
+extra_args = ["--crate-type=lib", 
+              "-L", "dependency=src/deps_hack/target/debug/deps",
+              "--extern=deps_hack=\"src/deps_hack/target/debug/libdeps_hack.rlib",
+              "-A", "warnings"]
 prepare_script = """
 pushd src/deps_hack
 cargo clean

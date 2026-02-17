@@ -97,6 +97,8 @@ fn main() -> anyhow::Result<()> {
     }
     info!("Found verus binary");
 
+    let cargo_verus_binary_path = verus_repo.join("source/target-verus/release/cargo-verus");
+
     let run_configuration: RunConfiguration =
         toml::from_str(&std::fs::read_to_string(&args.config).map_err(|e| {
             anyhow!(
@@ -109,6 +111,17 @@ fn main() -> anyhow::Result<()> {
 
     info!("Loaded run configuration:");
     dbg!(&run_configuration);
+
+    // Check that cargo-verus executable is present if any project needs it
+    if run_configuration.projects.iter().any(|p| p.cargo_verus) {
+        if fs::metadata(&cargo_verus_binary_path).is_err() {
+            return Err(anyhow!(
+                "failed to find cargo-verus binary: {}",
+                cargo_verus_binary_path.display()
+            ));
+        }
+        info!("Found cargo-verus binary");
+    }
 
     info!("Running projects");
     let sh = Shell::new()?;
@@ -154,7 +167,7 @@ fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow!("failed to find {}: {}", project.refspec, e))?;
         project_repo.checkout_tree(&rev, None)?;
         let hash = rev.id().to_string();
-        sh.change_dir(repo_path);
+        sh.change_dir(&repo_path);
 
         if let Some(prepare_script) = &project.prepare_script {
             log_command(cmd!(sh, "/bin/bash -c {prepare_script}").into())
@@ -166,17 +179,33 @@ fn main() -> anyhow::Result<()> {
         for (target_index, target) in project.crate_roots.iter().enumerate() {
             info!("running target {target} ({} of {})", target_index + 1, project.crate_roots.len());
             let project_verification_start = std::time::Instant::now();
-            let output = log_command(
-                cmd!(
-                    sh,
-                    "{verus_binary_path} --output-json --time --no-report-long-running {target}"
+            let output = if project.cargo_verus {
+                // Run cargo-verus verify in the target directory
+                sh.change_dir(repo_path.join(target));
+                log_command(
+                    cmd!(
+                        sh,
+                        "{cargo_verus_binary_path} verus verify -- --output-json --time --no-report-long-running"
+                    )
+                    .args(run_configuration.verus_extra_args.iter().flatten())
+                    .args(project.extra_args.iter().flatten())
+                    .into(),
                 )
-                .args(run_configuration.verus_extra_args.iter().flatten())
-                .args(project.extra_args.iter().flatten())
-                .into(),
-            )
-            .output()
-            .map_err(|e| anyhow!("cannot execute verus on {}: {}", &project.name, e))?;
+                .output()
+                .map_err(|e| anyhow!("cannot execute cargo verus on {}: {}", &project.name, e))?
+            } else {
+                log_command(
+                    cmd!(
+                        sh,
+                        "{verus_binary_path} --output-json --time --no-report-long-running {target}"
+                    )
+                    .args(run_configuration.verus_extra_args.iter().flatten())
+                    .args(project.extra_args.iter().flatten())
+                    .into(),
+                )
+                .output()
+                .map_err(|e| anyhow!("cannot execute verus on {}: {}", &project.name, e))?
+            };
             let project_verification_duration = project_verification_start.elapsed();
 
             // Build output filename: use project name alone for single targets,
