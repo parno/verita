@@ -108,7 +108,7 @@ fn process_target(
         log_command(
             cmd!(
                 sh,
-                "{cargo_verus_binary_path} verus verify -- --output-json --time --no-report-long-running"
+                "{cargo_verus_binary_path} verus verify -- --output-json --time"
             )
             .args(ctx.run_configuration.verus_extra_args.iter().flatten())
             .args(project.extra_args.iter().flatten())
@@ -120,7 +120,7 @@ fn process_target(
         log_command(
             cmd!(
                 sh,
-                "{verus_binary_path} --output-json --time --no-report-long-running {target}"
+                "{verus_binary_path} --output-json --time {target}"
             )
             .args(ctx.run_configuration.verus_extra_args.iter().flatten())
             .args(project.extra_args.iter().flatten())
