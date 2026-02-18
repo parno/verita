@@ -56,7 +56,7 @@ fn get_solver_version(
         .expect("missing capture group")
         .as_str()
         .to_string();
-    println!("Found {solver_exe} version: {v}");
+    info!("Found {solver_exe} version: {v}");
     Ok(v)
 }
 
@@ -463,7 +463,6 @@ fn main() -> anyhow::Result<()> {
         .map_err(|e| anyhow!("cannot parse run configuration: {}", e))?;
 
     info!("Loaded run configuration:");
-    dbg!(&run_configuration);
 
     // Check that cargo-verus executable is present if any project needs it
     if run_configuration.projects.iter().any(|p| p.cargo_verus) {
