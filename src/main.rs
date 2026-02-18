@@ -103,13 +103,43 @@ fn process_target(
     );
     let project_verification_start = std::time::Instant::now();
     let output = if project.cargo_verus {
-        // Run cargo-verus verify in the target directory
-        sh.change_dir(repo_path.join(target));
+        // Run cargo-verus focus in the target directory
+        let target_dir = repo_path.join(target);
+        sh.change_dir(&target_dir);
+
+        // If the crate has both src/lib.rs and src/main.rs, cargo-verus will
+        // produce separate JSON output for each target. Detect this and pass
+        // --bin <name> to only verify the binary target.
+        let mut cargo_target_args: Vec<String> = Vec::new();
+        if target_dir.join("src/lib.rs").exists() && target_dir.join("src/main.rs").exists() {
+            // Read the package name from Cargo.toml to use as the bin target name
+            let cargo_toml_path = target_dir.join("Cargo.toml");
+            let cargo_toml: toml::Value = toml::from_str(
+                &std::fs::read_to_string(&cargo_toml_path)
+                    .map_err(|e| anyhow!("cannot read {}: {}", cargo_toml_path.display(), e))?,
+            )
+            .map_err(|e| anyhow!("cannot parse {}: {}", cargo_toml_path.display(), e))?;
+            if let Some(name) = cargo_toml
+                .get("package")
+                .and_then(|p| p.get("name"))
+                .and_then(|n| n.as_str())
+            {
+                info!(
+                    "Detected both src/lib.rs and src/main.rs in {}; selecting --bin {}",
+                    target, name
+                );
+                cargo_target_args.push("--bin".to_string());
+                cargo_target_args.push(name.to_string());
+            }
+        }
+
         log_command(
             cmd!(
                 sh,
-                "{cargo_verus_binary_path} verus verify -- --output-json --time"
+                "{cargo_verus_binary_path} verus focus"
             )
+            .args(&cargo_target_args)
+            .args(["--", "--output-json", "--time"])
             .args(ctx.run_configuration.verus_extra_args.iter().flatten())
             .args(project.extra_args.iter().flatten())
             .into(),
@@ -458,6 +488,7 @@ fn main() -> anyhow::Result<()> {
     let mut failed_projects: Vec<(String, Option<PathBuf>)> = Vec::new();
     let mut succeeded_projects: Vec<String> = Vec::new();
     let mut ignored_projects: Vec<String> = Vec::new();
+    let mut all_warnings: Vec<String> = Vec::new();
 
     for project in run_configuration.projects.iter() {
         if project.ignore {
@@ -466,7 +497,8 @@ fn main() -> anyhow::Result<()> {
             continue;
         }
         match process_project(&ctx, project, workdir) {
-            Ok((summaries, any_verus_failure)) => {
+            Ok((summaries, any_verus_failure, warnings)) => {
+                all_warnings.extend(warnings);
                 // If any target had Verus failures and we're in auto-cleanup mode,
                 // preserve the repo for debugging
                 let mut preserved_path = None;
@@ -553,6 +585,12 @@ fn main() -> anyhow::Result<()> {
     }
     if !ignored_projects.is_empty() {
         println!("Ignored ({}): {}", ignored_projects.len(), ignored_projects.join(", "));
+    }
+    if !all_warnings.is_empty() {
+        println!("Warnings ({}):", all_warnings.len());
+        for w in &all_warnings {
+            println!("  {}", w);
+        }
     }
     println!("Output: {}", output_path.display());
 
