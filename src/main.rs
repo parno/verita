@@ -33,6 +33,9 @@ struct Args {
     /// This will also cause verita to retain the project repos it clones.
     #[arg(short = 'd', long = "debug", action = clap::ArgAction::Count)]
     debug_level: u8,
+    /// Run projects even if they are marked `ignore = true` in the configuration.
+    #[arg(long)]
+    run_ignored: bool,
 }
 
 fn get_solver_version(
@@ -525,7 +528,7 @@ fn main() -> anyhow::Result<()> {
     let mut all_warnings: Vec<String> = Vec::new();
 
     for project in run_configuration.projects.iter() {
-        if project.ignore {
+        if project.ignore && !args.run_ignored {
             info!("Skipping ignored project {}", project.name);
             ignored_projects.push(project.name.clone());
             continue;
