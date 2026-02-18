@@ -13,15 +13,6 @@ crate_roots = ["ironsht/src/lib.rs"]
 extra_args = ["--crate-type=dylib"]
 
 [[project]]
-name = "page-table"
-# NR PR broke compatibility: https://github.com/matthias-brun/verified-nrkernel/pull/7
-ignore= true
-git_url = "https://github.com/matthias-brun/verified-nrkernel.git"
-refspec = "main"
-crate_roots = ["page-table/src/lib.rs"]
-extra_args = ["--crate-type=lib", "--rlimit", "60", "--cfg", "feature=\"impl\""]
-
-[[project]]
 name = "node-replication"
 git_url = "https://github.com/verus-lang/verified-node-replication.git"
 refspec = "main"
@@ -76,4 +67,24 @@ cargo +1.93.0 build
 popd
 """
 
+[[project]]
+name = "page-table"
+# NR PR broke compatibility: https://github.com/matthias-brun/verified-nrkernel/pull/7
+ignore= true
+git_url = "https://github.com/matthias-brun/verified-nrkernel.git"
+refspec = "main"
+crate_roots = ["page-table/src/lib.rs"]
+extra_args = ["--crate-type=lib", "--rlimit", "60", "--cfg", "feature=\"impl\""]
 
+[[project]]
+name = "vest"
+git_url = "https://github.com/secure-foundations/vest.git"
+refspec = "main"
+# Currently vest doesn't verify, but the example does
+ignore= true
+cargo_verus = true
+crate_roots = ["vest", "vest-examples/tls_dsl"]
+# The examples all use a build.rs file to run the Vest executable before verification can begin
+prepare_script = """
+cargo install vest
+"""
