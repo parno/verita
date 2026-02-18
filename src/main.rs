@@ -1,5 +1,6 @@
 use crate::config::RunConfiguration;
 use crate::config::RunConfigurationProject;
+use crate::dependencies::inject_verus_patches;
 use crate::output::VerusOutput;
 use anyhow::anyhow;
 use clap::Parser as ClapParser;
@@ -11,6 +12,7 @@ use tracing::{error, info, warn}; // debug, trace
 use xshell::{cmd, Shell};
 
 pub mod config;
+pub mod dependencies;
 pub mod output;
 
 #[derive(ClapParser)]
@@ -73,6 +75,7 @@ struct RunContext<'a> {
     sh: &'a Shell,
     verus_binary_path: &'a Path,
     cargo_verus_binary_path: &'a Path,
+    verus_repo: &'a Path,
     run_configuration: &'a RunConfiguration,
     output_path: &'a Path,
     label: &'a str,
@@ -106,6 +109,19 @@ fn process_target(
         // Run cargo-verus focus in the target directory
         let target_dir = repo_path.join(target);
         sh.change_dir(&target_dir);
+
+        // Override any Verus crate dependencies to use the local Verus repo
+        if let Err(e) = inject_verus_patches(
+            &target_dir,
+            repo_path,
+            ctx.verus_repo,
+            &ctx.run_configuration.verus_git_url,
+        ) {
+            warn!(
+                "Failed to inject Verus patches for {} target {}: {}",
+                project.name, target, e
+            );
+        }
 
         // If the crate has both src/lib.rs and src/main.rs, cargo-verus will
         // produce separate JSON output for each target. Detect this and pass
@@ -493,6 +509,7 @@ fn main() -> anyhow::Result<()> {
         sh: &sh,
         verus_binary_path: &verus_binary_path,
         cargo_verus_binary_path: &cargo_verus_binary_path,
+        verus_repo: &verus_repo,
         run_configuration: &run_configuration,
         output_path: &output_path,
         label: &args.label,
