@@ -35,9 +35,6 @@ refspec = "main"
 cargo_verus = true
 crate_roots = ["capybaraKV/capybarakv", "multilog/multilog", "pmemlog"]
 
-
-# Fails 
-
 [[project]]
 name = "memory-allocator"
 git_url = "https://github.com/verus-lang/verified-memory-allocator.git"
@@ -51,12 +48,14 @@ extra_args = [
 prepare_script = """
 pushd test_libc
 cargo clean
-cargo +1.82.0 build --release
+cargo +1.93.0 build --release
 popd
 LIBC_RLIB_NAME=$(find ./test_libc/target/release/deps/ -name 'liblibc-*.rlib')
 mkdir -p build
 cp $LIBC_RLIB_NAME build/liblibc.rlib
 """
+
+# Fails 
 
 [[project]]
 name = "anvil"
@@ -65,12 +64,12 @@ refspec = "main"
 crate_roots = ["src/vdeployment_admission_controller.rs"]
 extra_args = ["--crate-type=lib", 
               "-L", "dependency=src/deps_hack/target/debug/deps",
-              "--extern=deps_hack=\"src/deps_hack/target/debug/libdeps_hack.rlib",
+              "--extern=deps_hack=\"src/deps_hack/target/debug/libdeps_hack.rlib\"",
               "-A", "warnings"]
 prepare_script = """
 pushd src/deps_hack
 cargo clean
-cargo +1.92.0 build -v
+cargo +1.93.0 build -v
 popd
 """
 
