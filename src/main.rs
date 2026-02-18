@@ -183,87 +183,104 @@ fn process_target(
     let mut warnings = Vec::new();
 
     // Use a streaming deserializer to handle cases where cargo-verus
-    // outputs multiple JSON objects (e.g., one per crate target)
-    let mut stream =
+    // outputs multiple JSON objects (e.g., one per crate target, including
+    // no-verify dependency runs like vstd)
+    let stream =
         serde_json::Deserializer::from_slice(&output.stdout).into_iter::<serde_json::Value>();
-    let (output_json, verus_output) = match stream.next() {
-        Some(Ok(mut output_json)) => {
-            // Check if there's additional JSON output beyond the first object
-            let remaining_offset = stream.byte_offset();
-            let remaining = &output.stdout[remaining_offset..];
-            if remaining.iter().any(|b| !b.is_ascii_whitespace()) {
-                let warning_msg = format!(
-                    "{} target {}: additional JSON output was ignored \
-                     (cargo-verus may have produced output for multiple crate targets)",
-                    project.name, target
-                );
-                warn!("{}", warning_msg);
-                warnings.push(warning_msg);
-            }
 
-            let verus_output: Option<VerusOutput> =
-                match serde_json::from_value(output_json.clone()) {
-                    Ok(v) => Some(v),
-                    Err(e) => {
-                        error!(
-                            "cannot parse verus json output for {}: {}",
-                            &project.name, e
-                        );
-                        error!("got: {:?}", output_json);
-                        None
-                    }
-                };
-            let duration_ms_value = serde_json::Value::Number(
-                serde_json::Number::from_f64(
-                    project_verification_duration.as_millis() as f64,
-                )
+    // Parse all JSON objects and filter out no-verify dependency outputs
+    // (those with success: true and verified: 0)
+    let mut all_objects = Vec::new();
+    let mut skipped_count = 0usize;
+    for item in stream {
+        match item {
+            Ok(obj) => {
+                let is_noverify_dep = obj
+                    .get("verification-results")
+                    .map(|vr| {
+                        vr.get("success") == Some(&serde_json::Value::Bool(true))
+                            && vr.get("verified") == Some(&serde_json::json!(0))
+                    })
+                    .unwrap_or(false);
+                if is_noverify_dep {
+                    skipped_count += 1;
+                } else {
+                    all_objects.push(obj);
+                }
+            }
+            Err(e) => {
+                error!("cannot parse verus output for {}: {}", &project.name, e);
+                error!("got: {}", &String::from_utf8_lossy(&output.stdout));
+                break;
+            }
+        }
+    }
+    if skipped_count > 0 {
+        info!(
+            "Skipped {} no-verify dependency output(s) for {} target {}",
+            skipped_count, project.name, target
+        );
+    }
+    if all_objects.len() > 1 {
+        let warning_msg = format!(
+            "{} target {}: {} JSON outputs remained after filtering \
+             (expected 1); using the first",
+            project.name,
+            target,
+            all_objects.len()
+        );
+        warn!("{}", warning_msg);
+        warnings.push(warning_msg);
+    }
+
+    let (output_json, verus_output) = if let Some(mut output_json) = all_objects.into_iter().next()
+    {
+        let verus_output: Option<VerusOutput> =
+            match serde_json::from_value(output_json.clone()) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    error!(
+                        "cannot parse verus json output for {}: {}",
+                        &project.name, e
+                    );
+                    error!("got: {:?}", output_json);
+                    None
+                }
+            };
+        let duration_ms_value = serde_json::Value::Number(
+            serde_json::Number::from_f64(project_verification_duration.as_millis() as f64)
                 .expect("valid verus_build_duration"),
-            );
-            output_json["runner"] = serde_json::json!({
-                "success": output.status.success(),
-                "stderr": String::from_utf8_lossy(&output.stderr),
-                "verus_git_url": ctx.run_configuration.verus_git_url,
-                "verus_refspec": ctx.run_configuration.verus_refspec,
-                "verus_features": ctx.run_configuration.verus_features,
-                "run_configuration": project,
-                "verification_duration_ms": duration_ms_value,
-                "z3_version": ctx.z3_version,
-                "cvc5_version": ctx.cvc5_version,
-                "label": ctx.label,
-                "date": ctx.date,
-            });
-            (output_json, verus_output)
-        }
-        Some(Err(e)) => {
-            error!("cannot parse verus output for {}: {}", &project.name, e);
-            error!("got: {}", &String::from_utf8(output.stdout)?);
-            (
-                serde_json::json!({
-                    "runner": {
-                        "success": output.status.success(),
-                        "stderr": String::from_utf8_lossy(&output.stderr),
-                        "invalid_output_json": true,
-                    }
-                }),
-                None,
-            )
-        }
-        None => {
-            error!(
-                "cannot parse verus output for {}: empty output",
-                &project.name
-            );
-            (
-                serde_json::json!({
-                    "runner": {
-                        "success": output.status.success(),
-                        "stderr": String::from_utf8_lossy(&output.stderr),
-                        "invalid_output_json": true,
-                    }
-                }),
-                None,
-            )
-        }
+        );
+        output_json["runner"] = serde_json::json!({
+            "success": output.status.success(),
+            "stderr": String::from_utf8_lossy(&output.stderr),
+            "verus_git_url": ctx.run_configuration.verus_git_url,
+            "verus_refspec": ctx.run_configuration.verus_refspec,
+            "verus_features": ctx.run_configuration.verus_features,
+            "run_configuration": project,
+            "verification_duration_ms": duration_ms_value,
+            "z3_version": ctx.z3_version,
+            "cvc5_version": ctx.cvc5_version,
+            "label": ctx.label,
+            "date": ctx.date,
+        });
+        (output_json, verus_output)
+    } else {
+        error!(
+            "cannot parse verus output for {}: no valid output \
+             (had {} no-verify dependency output(s))",
+            &project.name, skipped_count
+        );
+        (
+            serde_json::json!({
+                "runner": {
+                    "success": output.status.success(),
+                    "stderr": String::from_utf8_lossy(&output.stderr),
+                    "invalid_output_json": true,
+                }
+            }),
+            None,
+        )
     };
     std::fs::write(
         &project_output_path_json,
