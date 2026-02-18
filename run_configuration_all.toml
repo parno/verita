@@ -28,17 +28,15 @@ refspec = "main"
 crate_roots = ["verified-node-replication/src/lib.rs"]
 extra_args = ["--crate-type=dylib"]
 
-
-
-
-
-# Fails 
 [[project]]
 name = "verified-storage"
 git_url = "https://github.com/microsoft/verified-storage.git"
 refspec = "main"
 cargo_verus = true
-crate_roots = ["capybaraKV", "multilog", "pmemlog"]
+crate_roots = ["capybaraKV/capybarakv", "multilog/multilog", "pmemlog"]
+
+
+# Fails 
 
 [[project]]
 name = "memory-allocator"
@@ -59,14 +57,6 @@ LIBC_RLIB_NAME=$(find ./test_libc/target/release/deps/ -name 'liblibc-*.rlib')
 mkdir -p build
 cp $LIBC_RLIB_NAME build/liblibc.rlib
 """
-
-
-[[project]]
-name = "vest"
-git_url = "https://github.com/secure-foundations/vest.git"
-refspec = "main"
-cargo-verus = true
-crate_roots = ["vest", "vest-examples"]
 
 [[project]]
 name = "anvil"

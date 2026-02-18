@@ -82,7 +82,7 @@ struct RunContext<'a> {
 }
 
 /// Process a single crate root target within a project.
-/// Returns the summary tuple for this target, or an error.
+/// Returns (summary, verus_failed, warnings) or an error.
 fn process_target(
     ctx: &RunContext,
     project: &RunConfigurationProject,
@@ -91,7 +91,7 @@ fn process_target(
     target_index: usize,
     total_targets: usize,
     hash: &str,
-) -> anyhow::Result<(ProjectSummary, bool)> {
+) -> anyhow::Result<(ProjectSummary, bool, Vec<String>)> {
     let sh = ctx.sh;
     let verus_binary_path = ctx.verus_binary_path;
     let cargo_verus_binary_path = ctx.cargo_verus_binary_path;
@@ -150,57 +150,91 @@ fn process_target(
     };
     let project_output_path_json = ctx.output_path.join(&output_name).with_extension("json");
 
-    let (output_json, verus_output) =
-        match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
-            Ok(mut output_json) => {
-                let verus_output: Option<VerusOutput> =
-                    match serde_json::from_value(output_json.clone()) {
-                        Ok(v) => Some(v),
-                        Err(e) => {
-                            error!(
-                                "cannot parse verus json output for {}: {}",
-                                &project.name, e
-                            );
-                            error!("got: {:?}", output_json);
-                            None
-                        }
-                    };
-                let duration_ms_value = serde_json::Value::Number(
-                    serde_json::Number::from_f64(
-                        project_verification_duration.as_millis() as f64,
-                    )
-                    .expect("valid verus_build_duration"),
+    let mut warnings = Vec::new();
+
+    // Use a streaming deserializer to handle cases where cargo-verus
+    // outputs multiple JSON objects (e.g., one per crate target)
+    let mut stream =
+        serde_json::Deserializer::from_slice(&output.stdout).into_iter::<serde_json::Value>();
+    let (output_json, verus_output) = match stream.next() {
+        Some(Ok(mut output_json)) => {
+            // Check if there's additional JSON output beyond the first object
+            let remaining_offset = stream.byte_offset();
+            let remaining = &output.stdout[remaining_offset..];
+            if remaining.iter().any(|b| !b.is_ascii_whitespace()) {
+                let warning_msg = format!(
+                    "{} target {}: additional JSON output was ignored \
+                     (cargo-verus may have produced output for multiple crate targets)",
+                    project.name, target
                 );
-                output_json["runner"] = serde_json::json!({
-                    "success": output.status.success(),
-                    "stderr": String::from_utf8_lossy(&output.stderr),
-                    "verus_git_url": ctx.run_configuration.verus_git_url,
-                    "verus_refspec": ctx.run_configuration.verus_refspec,
-                    "verus_features": ctx.run_configuration.verus_features,
-                    "run_configuration": project,
-                    "verification_duration_ms": duration_ms_value,
-                    "z3_version": ctx.z3_version,
-                    "cvc5_version": ctx.cvc5_version,
-                    "label": ctx.label,
-                    "date": ctx.date,
-                });
-                (output_json, verus_output)
+                warn!("{}", warning_msg);
+                warnings.push(warning_msg);
             }
-            Err(e) => {
-                error!("cannot parse verus output for {}: {}", &project.name, e);
-                error!("got: {}", &String::from_utf8(output.stdout)?);
-                (
-                    serde_json::json!({
-                        "runner": {
-                            "success": output.status.success(),
-                            "stderr": String::from_utf8_lossy(&output.stderr),
-                            "invalid_output_json": true,
-                        }
-                    }),
-                    None,
+
+            let verus_output: Option<VerusOutput> =
+                match serde_json::from_value(output_json.clone()) {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        error!(
+                            "cannot parse verus json output for {}: {}",
+                            &project.name, e
+                        );
+                        error!("got: {:?}", output_json);
+                        None
+                    }
+                };
+            let duration_ms_value = serde_json::Value::Number(
+                serde_json::Number::from_f64(
+                    project_verification_duration.as_millis() as f64,
                 )
-            }
-        };
+                .expect("valid verus_build_duration"),
+            );
+            output_json["runner"] = serde_json::json!({
+                "success": output.status.success(),
+                "stderr": String::from_utf8_lossy(&output.stderr),
+                "verus_git_url": ctx.run_configuration.verus_git_url,
+                "verus_refspec": ctx.run_configuration.verus_refspec,
+                "verus_features": ctx.run_configuration.verus_features,
+                "run_configuration": project,
+                "verification_duration_ms": duration_ms_value,
+                "z3_version": ctx.z3_version,
+                "cvc5_version": ctx.cvc5_version,
+                "label": ctx.label,
+                "date": ctx.date,
+            });
+            (output_json, verus_output)
+        }
+        Some(Err(e)) => {
+            error!("cannot parse verus output for {}: {}", &project.name, e);
+            error!("got: {}", &String::from_utf8(output.stdout)?);
+            (
+                serde_json::json!({
+                    "runner": {
+                        "success": output.status.success(),
+                        "stderr": String::from_utf8_lossy(&output.stderr),
+                        "invalid_output_json": true,
+                    }
+                }),
+                None,
+            )
+        }
+        None => {
+            error!(
+                "cannot parse verus output for {}: empty output",
+                &project.name
+            );
+            (
+                serde_json::json!({
+                    "runner": {
+                        "success": output.status.success(),
+                        "stderr": String::from_utf8_lossy(&output.stderr),
+                        "invalid_output_json": true,
+                    }
+                }),
+                None,
+            )
+        }
+    };
     std::fs::write(
         &project_output_path_json,
         serde_json::to_string_pretty(&output_json)?,
@@ -216,16 +250,17 @@ fn process_target(
             verus_output,
         ),
         verus_failed,
+        warnings,
     ))
 }
 
 /// Process a single project: clone, checkout, prepare, and run all crate root targets.
-/// Returns a list of per-target summaries and whether any target had Verus failures.
+/// Returns (summaries, any_verus_failure, warnings) or an error.
 fn process_project(
     ctx: &RunContext,
     project: &RunConfigurationProject,
     workdir: &Path,
-) -> anyhow::Result<(Vec<ProjectSummary>, bool)> {
+) -> anyhow::Result<(Vec<ProjectSummary>, bool, Vec<String>)> {
     info!("running project {}", project.name);
 
     info!("\tCloning project");
@@ -248,6 +283,7 @@ fn process_project(
 
     let mut summaries = Vec::new();
     let mut any_verus_failure = false;
+    let mut all_warnings = Vec::new();
 
     for (target_index, target) in project.crate_roots.iter().enumerate() {
         match process_target(
@@ -259,10 +295,11 @@ fn process_project(
             project.crate_roots.len(),
             &hash,
         ) {
-            Ok((summary, verus_failed)) => {
+            Ok((summary, verus_failed, warnings)) => {
                 if verus_failed {
                     any_verus_failure = true;
                 }
+                all_warnings.extend(warnings);
                 summaries.push(summary);
             }
             Err(e) => {
@@ -306,7 +343,7 @@ fn process_project(
         }
     }
 
-    Ok((summaries, any_verus_failure))
+    Ok((summaries, any_verus_failure, all_warnings))
 }
 
 fn main() -> anyhow::Result<()> {
