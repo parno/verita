@@ -420,8 +420,14 @@ fn main() -> anyhow::Result<()> {
     let mut project_summaries = Vec::new();
     let mut failed_projects: Vec<(String, Option<PathBuf>)> = Vec::new();
     let mut succeeded_projects: Vec<String> = Vec::new();
+    let mut ignored_projects: Vec<String> = Vec::new();
 
     for project in run_configuration.projects.iter() {
+        if project.ignore {
+            info!("Skipping ignored project {}", project.name);
+            ignored_projects.push(project.name.clone());
+            continue;
+        }
         match process_project(&ctx, project, workdir) {
             Ok((summaries, any_verus_failure)) => {
                 // If any target had Verus failures and we're in auto-cleanup mode,
@@ -493,7 +499,7 @@ fn main() -> anyhow::Result<()> {
     println!("\n--- Run Summary ---");
     println!(
         "Total projects: {}",
-        succeeded_projects.len() + failed_projects.len()
+        succeeded_projects.len() + failed_projects.len() + ignored_projects.len()
     );
     if !succeeded_projects.is_empty() {
         println!("Succeeded ({}): {}", succeeded_projects.len(), succeeded_projects.join(", "));
@@ -507,6 +513,9 @@ fn main() -> anyhow::Result<()> {
                 println!("  {}", name);
             }
         }
+    }
+    if !ignored_projects.is_empty() {
+        println!("Ignored ({}): {}", ignored_projects.len(), ignored_projects.join(", "));
     }
     println!("Output: {}", output_path.display());
 

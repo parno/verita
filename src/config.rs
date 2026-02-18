@@ -10,6 +10,8 @@ pub struct RunConfigurationProject {
     pub prepare_script: Option<String>,
     #[serde(default)]
     pub cargo_verus: bool,
+    #[serde(default)]
+    pub ignore: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Hash)]
