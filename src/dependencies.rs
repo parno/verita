@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use tracing::info;
+use tracing::debug;
 
 /// Scan `{verus_repo}/source/` and return a map from package name to its directory path.
 fn build_verus_crate_map(verus_repo: &Path) -> HashMap<String, PathBuf> {
@@ -119,7 +119,7 @@ pub fn inject_verus_patches(
         return Ok(());
     }
 
-    info!(
+    debug!(
         "Injecting path patches for {} Verus crate(s) into {}",
         patches.len(),
         workspace_cargo_toml.display()
@@ -139,7 +139,7 @@ pub fn inject_verus_patches(
             toml::Value::String(crate_path.to_string_lossy().into_owned()),
         );
         patch_entries.insert(crate_name.clone(), toml::Value::Table(entry));
-        info!("  {} -> {}", crate_name, crate_path.display());
+        debug!("  {} -> {}", crate_name, crate_path.display());
     }
 
     // Ensure [patch] table exists

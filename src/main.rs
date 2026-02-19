@@ -8,7 +8,7 @@ use git2::Repository;
 use regex::Regex;
 use std::{fs, path::Path, path::PathBuf};
 use tempdir::TempDir;
-use tracing::{error, info, warn}; // debug, trace
+use tracing::{debug, error, info, warn};
 use xshell::{cmd, Shell};
 
 pub mod config;
@@ -29,8 +29,8 @@ struct Args {
     /// Label for the run
     #[arg(short, long)]
     label: String,
-    /// Print debugging output (can be repeated for more detail).
-    /// This will also cause verita to retain the project repos it clones.
+    /// Enable debug output; repeat for more detail (-d: debug, -dd: trace).
+    /// Also causes verita to retain the project repos it clones.
     #[arg(short = 'd', long = "debug", action = clap::ArgAction::Count)]
     debug_level: u8,
     /// Run projects even if they are marked `ignore = true` in the configuration.
@@ -56,12 +56,12 @@ fn get_solver_version(
         .expect("missing capture group")
         .as_str()
         .to_string();
-    info!("Found {solver_exe} version: {v}");
+    debug!("Found {solver_exe} version: {v}");
     Ok(v)
 }
 
 pub fn log_command(cmd: std::process::Command) -> std::process::Command {
-    info!("running: {:?}", &cmd);
+    debug!("running: {:?}", &cmd);
     cmd
 }
 
@@ -143,7 +143,7 @@ fn process_target(
                 .and_then(|p| p.get("name"))
                 .and_then(|n| n.as_str())
             {
-                info!(
+                debug!(
                     "Detected both src/lib.rs and src/main.rs in {}; selecting --bin {}",
                     target, name
                 );
@@ -235,7 +235,7 @@ fn process_target(
         }
     }
     if skipped_count > 0 {
-        info!(
+        debug!(
             "Skipped {} no-verify dependency output(s) for {} target {}",
             skipped_count, project.name, target
         );
@@ -329,7 +329,7 @@ fn process_project(
 ) -> anyhow::Result<(Vec<ProjectSummary>, bool, Vec<String>)> {
     info!("running project {}", project.name);
 
-    info!("\tCloning project");
+    debug!("Cloning project");
     let repo_path = workdir.join(&project.name);
     let project_repo = Repository::clone(&project.git_url, &repo_path)?;
     let (rev, _reference) = project_repo
@@ -420,9 +420,8 @@ fn main() -> anyhow::Result<()> {
         .with_level(true)
         .with_target(false)
         .with_max_level(match args.debug_level {
-            0 => tracing::Level::WARN,
-            1 => tracing::Level::INFO,
-            2 => tracing::Level::DEBUG,
+            0 => tracing::Level::INFO,
+            1 => tracing::Level::DEBUG,
             _ => tracing::Level::TRACE,
         })
         .init();
@@ -448,7 +447,7 @@ fn main() -> anyhow::Result<()> {
             verus_binary_path.display()
         ));
     }
-    info!("Found verus binary");
+    debug!("Found verus binary");
 
     let cargo_verus_binary_path = verus_repo.join("source/target-verus/release/cargo-verus");
 
@@ -462,7 +461,7 @@ fn main() -> anyhow::Result<()> {
         })?)
         .map_err(|e| anyhow!("cannot parse run configuration: {}", e))?;
 
-    info!("Loaded run configuration:");
+    debug!("Loaded run configuration:");
 
     // Check that cargo-verus executable is present if any project needs it
     if run_configuration.projects.iter().any(|p| p.cargo_verus) {
@@ -472,10 +471,10 @@ fn main() -> anyhow::Result<()> {
                 cargo_verus_binary_path.display()
             ));
         }
-        info!("Found cargo-verus binary");
+        debug!("Found cargo-verus binary");
     }
 
-    info!("Running projects");
+    debug!("Running projects");
     let sh = Shell::new()?;
     sh.set_var("VERUS_Z3_PATH", verus_repo.join("source/z3"));
     sh.set_var("VERUS_CVC5_PATH", verus_repo.join("source/cvc5"));
@@ -505,7 +504,7 @@ fn main() -> anyhow::Result<()> {
         // Use a directory that will be automatically reclaimed after we terminate
         tmp_dir.path()
     };
-    info!("{}", &workdir);
+    debug!("Work directory: {}", &workdir.display());
 
     let ctx = RunContext {
         sh: &sh,
