@@ -505,7 +505,7 @@ fn main() -> anyhow::Result<()> {
         // Use a directory that will be automatically reclaimed after we terminate
         tmp_dir.path()
     };
-    dbg!(&workdir);
+    info!(&workdir);
 
     let ctx = RunContext {
         sh: &sh,
