@@ -2,11 +2,6 @@
 
 import argparse
 import json
-import glob
-from matplotlib import pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-import numpy as np
-import os
 
 def go(filename):
     with open(filename, 'r') as file:
