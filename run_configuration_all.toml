@@ -46,6 +46,15 @@ LIBC_RLIB_NAME=$(find ./test_libc/target/release/deps/ -name 'liblibc-*.rlib')
 mkdir -p build
 cp $LIBC_RLIB_NAME build/liblibc.rlib
 """
+prepare_script_windows = """
+Push-Location test_libc
+cargo clean
+cargo +1.93.0 build --release
+Pop-Location
+$libcRlib = Get-ChildItem -Path "./test_libc/target/release/deps/" -Filter "liblibc-*.rlib" | Select-Object -First 1
+New-Item -ItemType Directory -Path "build" -Force | Out-Null
+Copy-Item -Path $libcRlib.FullName -Destination "build/liblibc.rlib"
+"""
 
 # Fails 
 
@@ -66,6 +75,12 @@ pushd src/deps_hack
 cargo clean
 cargo +1.93.0 build
 popd
+"""
+prepare_script_windows = """
+Push-Location src/deps_hack
+cargo clean
+cargo +1.93.0 build
+Pop-Location
 """
 
 [[project]]
