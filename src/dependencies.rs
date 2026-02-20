@@ -136,7 +136,8 @@ pub fn inject_verus_patches(
         let mut entry = toml::map::Map::new();
         entry.insert(
             "path".to_string(),
-            toml::Value::String(crate_path.to_string_lossy().into_owned()),
+            // Cargo requires forward slashes in path values, even on Windows
+            toml::Value::String(crate_path.to_string_lossy().replace('\\', "/")),
         );
         patch_entries.insert(crate_name.clone(), toml::Value::Table(entry));
         debug!("  {} -> {}", crate_name, crate_path.display());

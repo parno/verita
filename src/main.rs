@@ -44,7 +44,10 @@ fn get_solver_version(
     fmt_str: &str,
 ) -> anyhow::Result<String> {
     let sh = Shell::new()?;
-    let output = cmd!(sh, "{verus_repo}/source/{solver_exe} --version") //.quiet().run()?;
+    let solver_path = verus_repo
+        .join("source")
+        .join(format!("{}{}", solver_exe, std::env::consts::EXE_SUFFIX));
+    let output = cmd!(sh, "{solver_path} --version")
         .output()?;
     //dbg!(&output);
     let output_str = String::from_utf8(output.stdout)?;
@@ -200,7 +203,12 @@ fn process_target(
     } else {
         let dir = Path::new(target)
             .parent()
-            .map(|p| p.to_string_lossy().replace('/', "-"))
+            .map(|p| {
+                p.components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join("-")
+            })
             .unwrap_or_default();
         if dir.is_empty() {
             project.name.clone()
@@ -363,12 +371,33 @@ fn process_project(
     let hash = rev.id().to_string();
     ctx.sh.change_dir(&repo_path);
 
-    if let Some(prepare_script) = &project.prepare_script {
-        log_command(cmd!(ctx.sh, "/bin/bash -c {prepare_script}").into())
-            .status()
-            .map_err(|e| {
-                anyhow!("cannot execute prepare script for {}: {}", &project.name, e)
-            })?;
+    // Select the appropriate prepare script for this platform
+    let platform_script: Option<&str> = if cfg!(windows) {
+        if let Some(s) = project.prepare_script_windows.as_deref() {
+            Some(s)
+        } else if project.prepare_script.is_some() {
+            warn!(
+                "Project {} has prepare_script but no prepare_script_windows; \
+                 skipping prepare step on Windows",
+                project.name
+            );
+            None
+        } else {
+            None
+        }
+    } else {
+        project.prepare_script.as_deref()
+    };
+
+    if let Some(prepare_script) = platform_script {
+        let status = if cfg!(windows) {
+            log_command(cmd!(ctx.sh, "powershell -Command {prepare_script}").into()).status()
+        } else {
+            log_command(cmd!(ctx.sh, "sh -c {prepare_script}").into()).status()
+        };
+        status.map_err(|e| {
+            anyhow!("cannot execute prepare script for {}: {}", &project.name, e)
+        })?;
     }
 
     let mut summaries = Vec::new();
@@ -403,7 +432,12 @@ fn process_project(
                 } else {
                     let dir = Path::new(target)
                         .parent()
-                        .map(|p| p.to_string_lossy().replace('/', "-"))
+                        .map(|p| {
+                            p.components()
+                                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                                .collect::<Vec<_>>()
+                                .join("-")
+                        })
                         .unwrap_or_default();
                     if dir.is_empty() {
                         project.name.clone()
@@ -464,7 +498,9 @@ fn main() -> anyhow::Result<()> {
     // println!("Found repo with head {:?}, state {:?}, ", verus_repo.head()?.name().unwrap(), verus_repo.state());
 
     // Check that verus executable is present
-    let verus_binary_path = verus_repo.join("source/target-verus/release/verus");
+    let verus_binary_path = verus_repo
+        .join("source/target-verus/release")
+        .join(format!("verus{}", std::env::consts::EXE_SUFFIX));
     if fs::metadata(&verus_binary_path).is_err() {
         return Err(anyhow!(
             "failed to find verus binary: {}",
@@ -473,7 +509,9 @@ fn main() -> anyhow::Result<()> {
     }
     debug!("Found verus binary");
 
-    let cargo_verus_binary_path = verus_repo.join("source/target-verus/release/cargo-verus");
+    let cargo_verus_binary_path = verus_repo
+        .join("source/target-verus/release")
+        .join(format!("cargo-verus{}", std::env::consts::EXE_SUFFIX));
 
     let run_configuration: RunConfiguration =
         toml::from_str(&std::fs::read_to_string(&args.config).map_err(|e| {
@@ -515,8 +553,18 @@ fn main() -> anyhow::Result<()> {
 
     debug!("Running projects");
     let sh = Shell::new()?;
-    sh.set_var("VERUS_Z3_PATH", verus_repo.join("source/z3"));
-    sh.set_var("VERUS_CVC5_PATH", verus_repo.join("source/cvc5"));
+    sh.set_var(
+        "VERUS_Z3_PATH",
+        verus_repo
+            .join("source")
+            .join(format!("z3{}", std::env::consts::EXE_SUFFIX)),
+    );
+    sh.set_var(
+        "VERUS_CVC5_PATH",
+        verus_repo
+            .join("source")
+            .join(format!("cvc5{}", std::env::consts::EXE_SUFFIX)),
+    );
 
     // If the Singular option is provided, confirm the binary exists and set the environment variable
     if let Some(p) = args.singular {

@@ -8,6 +8,7 @@ pub struct RunConfigurationProject {
     pub crate_roots: Vec<String>,
     pub extra_args: Option<Vec<String>>,
     pub prepare_script: Option<String>,
+    pub prepare_script_windows: Option<String>,
     #[serde(default)]
     pub cargo_verus: bool,
     #[serde(default)]
