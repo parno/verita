@@ -29,8 +29,30 @@ def load_results(directory):
                     "success": fn.get("success"),
                 })
 
+        # Determine which specific crate root this JSON represents.
+        # When a project has multiple crate roots, main.rs names each output file
+        # "<project-name>-<parent-dir-with-slashes-as-dashes>.json".  We reverse
+        # that to recover the original crate root path.
+        crate_roots = run_config.get("crate_roots", [])
+        proj_name = run_config.get("name", stem)
+        crate_root = None
+        if len(crate_roots) > 1:
+            if stem != proj_name and stem.startswith(proj_name + "-"):
+                suffix = stem[len(proj_name) + 1:]  # e.g. "src" or "foo-bar"
+                for cr in crate_roots:
+                    parent = str(Path(cr).parent).replace("/", "-")
+                    if parent == suffix:
+                        crate_root = cr
+                        break
+                if crate_root is None:
+                    crate_root = suffix  # fallback: show the raw suffix
+            else:
+                # Stem matched the project name exactly (parent dir was empty)
+                crate_root = crate_roots[0]
+
         results[stem] = {
-            "name": run_config.get("name", stem),
+            "name": proj_name,
+            "crate_root": crate_root,
             "success": runner.get("success"),
             "verified": vr.get("verified") if vr else None,
             "errors": vr.get("errors") if vr else None,
@@ -68,9 +90,17 @@ def sorted_entries(results):
 def print_single_summary(results):
     entries = sorted_entries(results)
 
-    proj_col = max(len("Project"), max(len(r["name"]) for _, r in entries)) + 2
+    show_crate = any(r["crate_root"] is not None for _, r in entries)
 
-    header = f"{'Project':<{proj_col}} {'Status':<8}  {'Verified':>10}   {'Errors':>6}   {'Total Time':>10}"
+    proj_col = max(len("Project"), max(len(r["name"]) for _, r in entries)) + 2
+    if show_crate:
+        cr_col = max(len("Crate Root"), max(len(r["crate_root"] or "") for _, r in entries)) + 2
+        header = (
+            f"{'Project':<{proj_col}} {'Crate Root':<{cr_col}}"
+            f" {'Status':<8}  {'Verified':>10}   {'Errors':>6}   {'Total Time':>10}"
+        )
+    else:
+        header = f"{'Project':<{proj_col}} {'Status':<8}  {'Verified':>10}   {'Errors':>6}   {'Total Time':>10}"
     sep = "-" * len(header)
 
     print("=== Project Summary ===")
@@ -83,7 +113,11 @@ def print_single_summary(results):
         verified = fmt_int_or_dash(r["verified"])
         errors = fmt_int_or_dash(r["errors"])
         total = fmt_time(r["total_ms"])
-        print(f"{r['name']:<{proj_col}} {status:<8}  {verified:>10}   {errors:>6}   {total:>10}")
+        if show_crate:
+            cr = r["crate_root"] or ""
+            print(f"{r['name']:<{proj_col}} {cr:<{cr_col}} {status:<8}  {verified:>10}   {errors:>6}   {total:>10}")
+        else:
+            print(f"{r['name']:<{proj_col}} {status:<8}  {verified:>10}   {errors:>6}   {total:>10}")
 
     print()
 
@@ -154,6 +188,7 @@ def print_comparison_summary(old_results, new_results):
         old = old_results.get(stem)
         new = new_results.get(stem)
         name = get_name(stem)
+        crate_root = (old or new)["crate_root"]
 
         if old is None:
             status_str = "(new)"
@@ -173,19 +208,29 @@ def print_comparison_summary(old_results, new_results):
             err_str = _cmp_int(old["errors"], new["errors"])
             time_str = _cmp_time(old["total_ms"], new["total_ms"])
 
-        rows.append((name, status_str, ver_str, err_str, time_str))
+        rows.append((name, crate_root, status_str, ver_str, err_str, time_str))
+
+    show_crate = any(r[1] is not None for r in rows)
 
     # Column widths
     proj_col  = max(len("Project"),  max(len(r[0]) for r in rows)) + 2
-    stat_col  = max(len("Status"),   max(len(r[1]) for r in rows)) + 2
-    ver_col   = max(len("Verified"), max(len(r[2]) for r in rows))
-    err_col   = max(len("Errors"),   max(len(r[3]) for r in rows))
-    time_col  = max(len("Total Time"), max(len(r[4]) for r in rows))
+    if show_crate:
+        cr_col = max(len("Crate Root"), max(len(r[1] or "") for r in rows)) + 2
+    stat_col  = max(len("Status"),   max(len(r[2]) for r in rows)) + 2
+    ver_col   = max(len("Verified"), max(len(r[3]) for r in rows))
+    err_col   = max(len("Errors"),   max(len(r[4]) for r in rows))
+    time_col  = max(len("Total Time"), max(len(r[5]) for r in rows))
 
-    header = (
-        f"{'Project':<{proj_col}} {'Status':<{stat_col}}"
-        f" {'Verified':>{ver_col}}  {'Errors':>{err_col}}  {'Total Time':>{time_col}}"
-    )
+    if show_crate:
+        header = (
+            f"{'Project':<{proj_col}} {'Crate Root':<{cr_col}} {'Status':<{stat_col}}"
+            f" {'Verified':>{ver_col}}  {'Errors':>{err_col}}  {'Total Time':>{time_col}}"
+        )
+    else:
+        header = (
+            f"{'Project':<{proj_col}} {'Status':<{stat_col}}"
+            f" {'Verified':>{ver_col}}  {'Errors':>{err_col}}  {'Total Time':>{time_col}}"
+        )
     sep = "-" * len(header)
 
     print("=== Project Summary (old → new) ===")
@@ -193,11 +238,18 @@ def print_comparison_summary(old_results, new_results):
     print(header)
     print(sep)
 
-    for name, status_str, ver_str, err_str, time_str in rows:
-        print(
-            f"{name:<{proj_col}} {status_str:<{stat_col}}"
-            f" {ver_str:>{ver_col}}  {err_str:>{err_col}}  {time_str:>{time_col}}"
-        )
+    for name, crate_root, status_str, ver_str, err_str, time_str in rows:
+        if show_crate:
+            cr = crate_root or ""
+            print(
+                f"{name:<{proj_col}} {cr:<{cr_col}} {status_str:<{stat_col}}"
+                f" {ver_str:>{ver_col}}  {err_str:>{err_col}}  {time_str:>{time_col}}"
+            )
+        else:
+            print(
+                f"{name:<{proj_col}} {status_str:<{stat_col}}"
+                f" {ver_str:>{ver_col}}  {err_str:>{err_col}}  {time_str:>{time_col}}"
+            )
 
     print()
 
@@ -276,8 +328,29 @@ def print_top5_comparison(old_results, new_results):
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Summarize Verita output")
-    parser.add_argument("dirs", nargs="+", metavar="DIR")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Summarize Verita verification results.\n\n"
+            "With one directory, prints a per-project summary and the top-5 slowest functions for each project.\n"
+            "With two directories, compares old vs. new runs."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  %(prog)s output/2026-01-10-baseline/\n"
+            "  %(prog)s output/2026-01-10-baseline/ output/2026-01-11-experiment/"
+        ),
+    )
+    parser.add_argument(
+        "dirs",
+        nargs="+",
+        metavar="DIR",
+        help=(
+            "output directory (or directories) to summarize; "
+            "each directory should contain the JSON files produced by a single Verita run. "
+            "Pass one DIR for a standalone summary, or two DIRs (old then new) for a comparison."
+        ),
+    )
     args = parser.parse_args()
 
     if len(args.dirs) == 1:
