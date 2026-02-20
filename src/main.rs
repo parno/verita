@@ -498,6 +498,21 @@ fn main() -> anyhow::Result<()> {
         debug!("Found cargo-verus binary");
     }
 
+    // Check that --singular was provided if any active project requires it
+    let singular_required: Vec<&str> = run_configuration
+        .projects
+        .iter()
+        .filter(|p| (!p.ignore || args.run_ignored) && p.requires_singular)
+        .map(|p| p.name.as_str())
+        .collect();
+    if !singular_required.is_empty() && args.singular.is_none() {
+        return Err(anyhow!(
+            "the following projects require Singular (set `requires_singular = true` \
+             in their config) but --singular was not specified: {}",
+            singular_required.join(", ")
+        ));
+    }
+
     debug!("Running projects");
     let sh = Shell::new()?;
     sh.set_var("VERUS_Z3_PATH", verus_repo.join("source/z3"));

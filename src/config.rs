@@ -11,6 +11,8 @@ pub struct RunConfigurationProject {
     #[serde(default)]
     pub cargo_verus: bool,
     #[serde(default)]
+    pub requires_singular: bool,
+    #[serde(default)]
     pub ignore: bool,
 }
 
