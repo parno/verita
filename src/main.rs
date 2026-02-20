@@ -181,6 +181,17 @@ fn process_target(
     let project_verification_duration = project_verification_start.elapsed();
 
     let verus_failed = !output.status.success();
+    if verus_failed {
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        warn!(
+            "Verus exited non-zero for {} target {} \
+             (may not have reached verification)",
+            &project.name, target
+        );
+        if !stderr_str.trim().is_empty() {
+            warn!("Verus stderr:\n{}", stderr_str.trim_end());
+        }
+    }
 
     // Build output filename: use project name alone for single targets,
     // or "project-crate-root-dir" for multiple targets
@@ -258,11 +269,24 @@ fn process_target(
             match serde_json::from_value(output_json.clone()) {
                 Ok(v) => Some(v),
                 Err(e) => {
-                    error!(
-                        "cannot parse verus json output for {}: {}",
-                        &project.name, e
-                    );
-                    error!("got: {:?}", output_json);
+                    if verus_failed {
+                        // Verus already logged a warning above; the incomplete
+                        // JSON (e.g., missing `smt`) is expected in this case.
+                        debug!(
+                            "Verus JSON for {} is incomplete (failed before \
+                             verification): {}",
+                            &project.name, e
+                        );
+                    } else {
+                        error!(
+                            "cannot parse verus json output for {}: {}",
+                            &project.name, e
+                        );
+                        let stderr_str = String::from_utf8_lossy(&output.stderr);
+                        if !stderr_str.trim().is_empty() {
+                            error!("Verus stderr: {}", stderr_str.trim_end());
+                        }
+                    }
                     None
                 }
             };

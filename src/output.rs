@@ -13,7 +13,9 @@ pub struct VerusOutputSmtTimesMs {
 pub struct VerusOutputTimesMs {
     estimated_cpu_time: u64,
     total: u64,
-    smt: VerusOutputSmtTimesMs,
+    // Absent when Verus exits before reaching SMT (e.g., a VIR error).
+    #[serde(default)]
+    smt: Option<VerusOutputSmtTimesMs>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Hash, Clone)]
