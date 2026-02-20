@@ -47,6 +47,7 @@ mkdir -p build
 cp $LIBC_RLIB_NAME build/liblibc.rlib
 """
 prepare_script_windows = """
+$ErrorActionPreference = 'Stop'
 Push-Location test_libc
 cargo clean
 cargo +1.93.0 build --release
@@ -77,6 +78,7 @@ cargo +1.93.0 build
 popd
 """
 prepare_script_windows = """
+$ErrorActionPreference = 'Stop'
 Push-Location src/deps_hack
 cargo clean
 cargo +1.93.0 build

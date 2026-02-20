@@ -395,9 +395,16 @@ fn process_project(
         } else {
             log_command(cmd!(ctx.sh, "sh -c {prepare_script}").into()).status()
         };
-        status.map_err(|e| {
+        let exit_status = status.map_err(|e| {
             anyhow!("cannot execute prepare script for {}: {}", &project.name, e)
         })?;
+        if !exit_status.success() {
+            return Err(anyhow!(
+                "prepare script for {} failed with {}",
+                &project.name,
+                exit_status
+            ));
+        }
     }
 
     let mut summaries = Vec::new();
