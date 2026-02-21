@@ -612,6 +612,7 @@ fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&output_path)?;
     let workdir = if args.debug_level > 0 {
         // Use a directory that won't disappear after we run, so we can debug any issues that arise
+        std::fs::create_dir_all(&perm_temp_dir)?;
         perm_temp_dir.as_path()
     } else {
         // Use a directory that will be automatically reclaimed after we terminate
