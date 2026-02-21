@@ -543,37 +543,54 @@ fn main() -> anyhow::Result<()> {
         debug!("Found cargo-verus binary");
     }
 
-    // Check that --singular was provided if any active project requires it
+    // Check that --singular was provided (or VERUS_SINGULAR_PATH is already set)
+    // if any active project requires it
     let singular_required: Vec<&str> = run_configuration
         .projects
         .iter()
         .filter(|p| (!p.ignore || args.run_ignored) && p.requires_singular)
         .map(|p| p.name.as_str())
         .collect();
-    if !singular_required.is_empty() && args.singular.is_none() {
+    if !singular_required.is_empty()
+        && args.singular.is_none()
+        && std::env::var("VERUS_SINGULAR_PATH").is_err()
+    {
         return Err(anyhow!(
             "the following projects require Singular (set `requires_singular = true` \
-             in their config) but --singular was not specified: {}",
+             in their config) but --singular was not specified and \
+             VERUS_SINGULAR_PATH is not set: {}",
             singular_required.join(", ")
         ));
     }
 
     debug!("Running projects");
     let sh = Shell::new()?;
-    sh.set_var(
-        "VERUS_Z3_PATH",
-        verus_repo
-            .join("source")
-            .join(format!("z3{}", std::env::consts::EXE_SUFFIX)),
-    );
-    sh.set_var(
-        "VERUS_CVC5_PATH",
-        verus_repo
-            .join("source")
-            .join(format!("cvc5{}", std::env::consts::EXE_SUFFIX)),
-    );
 
-    // If the Singular option is provided, confirm the binary exists and set the environment variable
+    // For each solver path: use the explicit verus-repo default only when the
+    // corresponding environment variable isn't already set by the caller.
+    if std::env::var("VERUS_Z3_PATH").is_ok() {
+        debug!("Respecting existing VERUS_Z3_PATH from environment");
+    } else {
+        sh.set_var(
+            "VERUS_Z3_PATH",
+            verus_repo
+                .join("source")
+                .join(format!("z3{}", std::env::consts::EXE_SUFFIX)),
+        );
+    }
+    if std::env::var("VERUS_CVC5_PATH").is_ok() {
+        debug!("Respecting existing VERUS_CVC5_PATH from environment");
+    } else {
+        sh.set_var(
+            "VERUS_CVC5_PATH",
+            verus_repo
+                .join("source")
+                .join(format!("cvc5{}", std::env::consts::EXE_SUFFIX)),
+        );
+    }
+
+    // If --singular was given, validate and set the path; otherwise fall back
+    // to VERUS_SINGULAR_PATH if already present in the environment.
     if let Some(p) = args.singular {
         if fs::metadata(&p).is_err() {
             return Err(anyhow!(
@@ -582,6 +599,8 @@ fn main() -> anyhow::Result<()> {
             ));
         }
         sh.set_var("VERUS_SINGULAR_PATH", p);
+    } else if std::env::var("VERUS_SINGULAR_PATH").is_ok() {
+        debug!("Respecting existing VERUS_SINGULAR_PATH from environment");
     }
 
     let date = chrono::Utc::now()
