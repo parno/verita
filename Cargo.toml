@@ -10,6 +10,7 @@ readme = "README.md"
 
 [dependencies]
 anyhow = "1.0.83"
+dunce = "1"
 chrono = "0.4.38"
 clap = { version = "4.3.11", features = ["derive"] }
 git2 = "0.18.3"

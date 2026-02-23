@@ -490,7 +490,7 @@ fn main() -> anyhow::Result<()> {
             _ => tracing::Level::TRACE,
         })
         .init();
-    let verus_repo = std::fs::canonicalize(args.verus_repo)?;
+    let verus_repo = dunce::canonicalize(args.verus_repo)?;
 
     let z3_version = match get_solver_version(&verus_repo, "z3", "Z3 version") {
         Ok(v) => v,
