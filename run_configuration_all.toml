@@ -69,6 +69,14 @@ prepare_script = """
 cargo install vest
 """
 
+[[project]]
+name = "human-eval"
+git_url = "https://github.com/secure-foundations/human-eval-verus.git"
+refspec = "main"
+crate_roots = ["tasks/lib.rs"]
+extra_args = ["--crate-type=lib"]
+
+
 # Fails 
 
 [[project]]
