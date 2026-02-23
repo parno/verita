@@ -90,45 +90,48 @@ fn get_local_version(crate_path: &Path) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-/// Update a single dependency entry in place if it has an exact version pin
+/// Update a single dependency item in place if it carries an exact version pin
 /// (`=X.Y.Z`) that doesn't match `local_ver`. Returns `true` if modified.
-fn update_dep_entry(dep: &mut toml::Value, local_ver: &str) -> bool {
-    match dep {
-        toml::Value::String(s) if s.starts_with('=') && s.trim_start_matches('=') != local_ver => {
+///
+/// Handles both the plain-string form (`vstd = "=0.0.0-old"`) and the
+/// inline/regular-table form (`vstd = { version = "=0.0.0-old", ... }`).
+fn relax_dep_item(dep: &mut toml_edit::Item, local_ver: &str) -> bool {
+    // ── String form ──────────────────────────────────────────────────────────
+    // Bind to an owned String first so the &str borrow on `dep` is fully
+    // released before we potentially write `*dep = ...`.
+    let cur_str: Option<String> = dep.as_str().map(str::to_owned);
+    if let Some(s) = cur_str {
+        if s.starts_with('=') && s.trim_start_matches('=') != local_ver {
             debug!("  relaxing exact version pin {} -> ={}", s, local_ver);
-            *s = format!("={}", local_ver);
-            true
+            *dep = toml_edit::value(format!("={}", local_ver));
+            return true;
         }
-        toml::Value::Table(t) => {
-            let needs_update = t
-                .get("version")
-                .and_then(|v| v.as_str())
-                .map(|v| v.starts_with('=') && v.trim_start_matches('=') != local_ver)
-                .unwrap_or(false);
-            if needs_update {
-                let old = t
-                    .get("version")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("?")
-                    .to_string();
-                debug!("  relaxing exact version pin {} -> ={}", old, local_ver);
-                t.insert(
-                    "version".to_string(),
-                    toml::Value::String(format!("={}", local_ver)),
-                );
-                true
-            } else {
-                false
+        return false; // it's a string but already correct (or not an exact pin)
+    }
+
+    // ── Table form ───────────────────────────────────────────────────────────
+    if let Some(tbl) = dep.as_table_like_mut() {
+        if let Some(v_item) = tbl.get_mut("version") {
+            let cur_str: Option<String> = v_item.as_str().map(str::to_owned);
+            if let Some(s) = cur_str {
+                if s.starts_with('=') && s.trim_start_matches('=') != local_ver {
+                    debug!("  relaxing exact version pin {} -> ={}", s, local_ver);
+                    *v_item = toml_edit::value(format!("={}", local_ver));
+                    return true;
+                }
             }
         }
-        _ => false,
     }
+    false
 }
 
 /// In the `Cargo.toml` at `path`, rewrite any exact-version pins (`=X.Y.Z`)
 /// on crates in `local_versions` that don't match the local version. This
 /// allows Cargo's `[patch]` entries to take effect: Cargo only applies a patch
 /// when the patch version satisfies the dependency's version constraint.
+///
+/// Uses `toml_edit` so that the rest of the file is left byte-for-byte
+/// identical (key order, comments, blank lines, etc.).
 fn relax_exact_version_pins(
     path: &Path,
     local_versions: &HashMap<String, String>,
@@ -140,38 +143,40 @@ fn relax_exact_version_pins(
         Ok(c) => c,
         Err(_) => return Ok(()),
     };
-    let mut manifest: toml::Value = match toml::from_str(&content) {
-        Ok(v) => v,
+    let mut doc = match content.parse::<toml_edit::DocumentMut>() {
+        Ok(d) => d,
         Err(_) => return Ok(()),
     };
     let mut changed = false;
 
     for section in &["dependencies", "dev-dependencies", "build-dependencies"] {
-        if let Some(deps) = manifest.get_mut(section).and_then(|d| d.as_table_mut()) {
+        if let Some(deps) = doc.get_mut(section).and_then(|d| d.as_table_mut()) {
             for (crate_name, local_ver) in local_versions {
                 if let Some(dep) = deps.get_mut(crate_name.as_str()) {
-                    changed |= update_dep_entry(dep, local_ver);
+                    changed |= relax_dep_item(dep, local_ver);
                 }
             }
         }
     }
-    if let Some(wdeps) = manifest
-        .get_mut("workspace")
-        .and_then(|w| w.get_mut("dependencies"))
-        .and_then(|d| d.as_table_mut())
-    {
-        for (crate_name, local_ver) in local_versions {
-            if let Some(dep) = wdeps.get_mut(crate_name.as_str()) {
-                changed |= update_dep_entry(dep, local_ver);
+
+    // [workspace.dependencies] requires two levels of navigation.
+    if doc.get("workspace").and_then(|w| w.get("dependencies")).is_some() {
+        if let Some(wdeps) = doc["workspace"]
+            .as_table_mut()
+            .and_then(|w| w.get_mut("dependencies"))
+            .and_then(|d| d.as_table_mut())
+        {
+            for (crate_name, local_ver) in local_versions {
+                if let Some(dep) = wdeps.get_mut(crate_name.as_str()) {
+                    changed |= relax_dep_item(dep, local_ver);
+                }
             }
         }
     }
 
     if changed {
         debug!("Updated exact version pins in {}", path.display());
-        let new_content = toml::to_string_pretty(&manifest)
-            .map_err(|e| anyhow!("cannot serialize {}: {}", path.display(), e))?;
-        std::fs::write(path, new_content)
+        std::fs::write(path, doc.to_string())
             .map_err(|e| anyhow!("cannot write {}: {}", path.display(), e))?;
     }
     Ok(())
@@ -183,6 +188,9 @@ fn relax_exact_version_pins(
 ///
 /// Two patch sources are written – `crates-io` and the Verus git URL – so the
 /// override works regardless of how the project declared its dependency.
+///
+/// Uses `toml_edit` so that the rest of the file is left byte-for-byte
+/// identical (key order, comments, blank lines, etc.).
 pub fn inject_verus_patches(
     target_dir: &Path,
     repo_root: &Path,
@@ -225,61 +233,39 @@ pub fn inject_verus_patches(
 
     let content = std::fs::read_to_string(&workspace_cargo_toml)
         .map_err(|e| anyhow!("cannot read {}: {}", workspace_cargo_toml.display(), e))?;
-    let mut manifest: toml::Value = toml::from_str(&content)
+    let mut doc = content
+        .parse::<toml_edit::DocumentMut>()
         .map_err(|e| anyhow!("cannot parse {}: {}", workspace_cargo_toml.display(), e))?;
 
-    // Build the table of { crate_name = { path = "..." } } entries
-    let mut patch_entries = toml::map::Map::new();
-    for (crate_name, crate_path) in &patches {
-        let mut entry = toml::map::Map::new();
-        entry.insert(
-            "path".to_string(),
-            // Cargo requires forward slashes in path values, even on Windows
-            toml::Value::String(crate_path.to_string_lossy().replace('\\', "/")),
-        );
-        patch_entries.insert(crate_name.clone(), toml::Value::Table(entry));
-        debug!("  {} -> {}", crate_name, crate_path.display());
-    }
-
     // Ensure [patch] table exists
-    if manifest.get("patch").is_none() {
-        manifest
-            .as_table_mut()
-            .ok_or_else(|| anyhow!("manifest root is not a table"))?
-            .insert("patch".to_string(), toml::Value::Table(toml::map::Map::new()));
+    if doc.get("patch").is_none() {
+        doc["patch"] = toml_edit::table();
     }
-    let patch_table = manifest["patch"]
+    let patch_section = doc["patch"]
         .as_table_mut()
         .ok_or_else(|| anyhow!("[patch] is not a table"))?;
 
-    // Merge into [patch.crates-io]
-    match patch_table.get_mut("crates-io") {
-        Some(toml::Value::Table(t)) => {
-            for (k, v) in &patch_entries {
-                t.insert(k.clone(), v.clone());
-            }
+    for source in &["crates-io", verus_git_url] {
+        if !patch_section.contains_key(source) {
+            patch_section[*source] = toml_edit::table();
         }
-        _ => {
-            patch_table
-                .insert("crates-io".to_string(), toml::Value::Table(patch_entries.clone()));
+        let source_section = patch_section[*source]
+            .as_table_mut()
+            .ok_or_else(|| anyhow!("[patch.{}] is not a table", source))?;
+
+        for (crate_name, crate_path) in &patches {
+            let path_str = crate_path.to_string_lossy().replace('\\', "/");
+            let mut entry = toml_edit::InlineTable::new();
+            entry.insert("path", toml_edit::Value::from(path_str.as_str()));
+            source_section.insert(
+                crate_name.as_str(),
+                toml_edit::Item::Value(toml_edit::Value::InlineTable(entry)),
+            );
+            debug!("  {} -> {}", crate_name, crate_path.display());
         }
     }
 
-    // Merge into [patch."<verus_git_url>"]
-    match patch_table.get_mut(verus_git_url) {
-        Some(toml::Value::Table(t)) => {
-            for (k, v) in &patch_entries {
-                t.insert(k.clone(), v.clone());
-            }
-        }
-        _ => {
-            patch_table.insert(verus_git_url.to_string(), toml::Value::Table(patch_entries));
-        }
-    }
-
-    let new_content = toml::to_string_pretty(&manifest)
-        .map_err(|e| anyhow!("cannot serialize {}: {}", workspace_cargo_toml.display(), e))?;
-    std::fs::write(&workspace_cargo_toml, new_content)
+    std::fs::write(&workspace_cargo_toml, doc.to_string())
         .map_err(|e| anyhow!("cannot write {}: {}", workspace_cargo_toml.display(), e))?;
 
     // Relax exact-version pins on the patched crates so Cargo actually uses the
