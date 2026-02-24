@@ -36,6 +36,11 @@ struct Args {
     /// Run projects even if they are marked `ignore = true` in the configuration.
     #[arg(long)]
     run_ignored: bool,
+    /// Run only the named project(s); may be given multiple times.
+    /// Projects not listed here are skipped.  The `ignore` flag and
+    /// `--run-ignored` still apply to the named projects.
+    #[arg(long = "project", value_name = "NAME")]
+    projects: Vec<String>,
 }
 
 fn get_solver_version(
@@ -640,6 +645,10 @@ fn main() -> anyhow::Result<()> {
     let mut all_warnings: Vec<String> = Vec::new();
 
     for project in run_configuration.projects.iter() {
+        if !args.projects.is_empty() && !args.projects.contains(&project.name) {
+            debug!("Skipping project {} (not in --project filter)", project.name);
+            continue;
+        }
         if project.ignore && !args.run_ignored {
             info!("Skipping ignored project {}", project.name);
             ignored_projects.push(project.name.clone());
