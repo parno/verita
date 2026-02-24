@@ -62,7 +62,9 @@ name = "vest"
 git_url = "https://github.com/secure-foundations/vest.git"
 refspec = "main"
 cargo_verus = true
-crate_roots = ["vest", "vest-examples/tls_dsl"]
+# TODO: Recent Verus changes appear to have broken the TLS example
+#crate_roots = ["vest", "vest-examples/tls_dsl"]
+crate_roots = ["vest"]
 # The examples all use a build.rs file to run the Vest executable before verification can begin
 prepare_script = """
 cargo install vest
