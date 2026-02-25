@@ -1,8 +1,8 @@
 # `verita`
 
-Verita is a [crater](https://github.com/rust-lang/crater)-inspired benchmarking tool for [Verus](https://github.com/verus-lang/verus), a Rust verification framework. Given a configuration file listing Verus projects, `verita` clones each project, runs Verus verification on it, and saves the results — including per-function SMT solver timing — to a timestamped output directory. The goal is to make it easy to compare verification performance and correctness across different Verus versions or solver configurations.
+Verita is a [crater](https://github.com/rust-lang/crater)-inspired benchmarking tool for [Verus](https://github.com/verus-lang/verus), a Rust verification framework. Given a configuration file listing Verus projects, `verita` clones each project, runs Verus verification on it, and saves the results — including per-function verification timing — to a timestamped output directory. The goal is to make it easy to compare verification performance and correctness across different Verus versions or solver configurations.
 
-Derived in part from an earlier [`verita`s tool](https://github.com/verus-lang/verus/tree/main/tools/`verita`s).
+Derived in part from an earlier [veritas tool](https://github.com/verus-lang/verus/tree/main/tools/veritas).
 
 ## Building and running
 
@@ -33,7 +33,7 @@ output/YYYY-MM-DD-HH-MM-SS-msec-LABEL/
 Inside that directory there is one JSON file per project (or per crate root, for projects with multiple crate roots). Each JSON file contains the raw Verus verification output augmented with a `runner` object that records metadata such as:
 
 - Whether the run succeeded
-- Stderr output from Verus
+- `stderr` output from Verus
 - Verus and solver versions
 - Per-function verification timing
 - The label and date of the run
@@ -60,6 +60,8 @@ python scripts/summarize.py output/2026-01-10-baseline/ output/2026-02-15-experi
 
 Configuration files are TOML. The top-level section configures run-wide options, and each `[[project]]` section describes one project to verify.  At present, the only relevant top-level key is `verus_extra_args`, which is an optional list of string arguments to be passed to every Verus invocation.
 
+NOTE: At present, when running with `cargo verus`, we use `cargo verus focus` to avoid re-verifying dependencies, such as `vstd`.
+
 ### Per-project keys (`[[project]]`)
 
 | Key | Type | Default | Description |
@@ -67,11 +69,11 @@ Configuration files are TOML. The top-level section configures run-wide options,
 | `name` | string | required | Display name; also used as the output filename stem |
 | `git_url` | string | required | Git URL of the project repository |
 | `refspec` | string | required | Git refspec (branch, tag, or commit) to check out |
-| `crate_roots` | list of strings | required | Paths to crate root files or directories, relative to the repo root. For `cargo_verus` projects these are subdirectory paths; for plain `verus` projects these are paths to `.rs` files. Multiple entries cause `verita` to run Verus separately on each root. |
+| `crate_roots` | list of strings | required | Paths to crate root files or directories, relative to the repo root. For projects using `cargo verus` these are subdirectory paths; for projects that directly invoke `verus` these are paths to `.rs` files. Multiple entries cause `verita` to run `verus` (or `cargo verus`) separately on each root. |
 | `extra_args` | list of strings | `[]` | Additional arguments appended to the Verus command for this project |
 | `prepare_script` | string | none | Shell script (bash/sh) run inside the cloned repo before verification. Useful for building dependencies. |
 | `prepare_script_windows` | string | none | PowerShell equivalent of `prepare_script` used on Windows. If omitted on Windows and `prepare_script` is set, the prepare step is skipped with a warning. |
 | `cargo_verus` | boolean | `false` | When `true`, use `cargo verus focus` instead of invoking `verus` directly. The crate roots are treated as package directories rather than `.rs` file paths. |
-| `requires_singular` | boolean | `false` | When `true`, `verita` requires `--singular` (or `VERUS_SINGULAR_PATH`) to be set; the run is aborted early if neither is provided. |
+| `requires_singular` | boolean | `false` | Indicates whether this project depends on Singular functionality in Verus. When `true`, `verita` requires `--singular` (or `VERUS_SINGULAR_PATH`) to be set; the run is aborted early if neither is provided. |
 | `ignore` | boolean | `false` | When `true`, the project is skipped unless `--run-ignored` is passed on the command line. Useful for projects that are known to be broken. |
 
