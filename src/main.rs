@@ -41,6 +41,9 @@ struct Args {
     /// `--run-ignored` still apply to the named projects.
     #[arg(long = "project", value_name = "NAME")]
     projects: Vec<String>,
+    /// Exit with a non-zero status if any active project fails verification.
+    #[arg(long)]
+    fail_on_error: bool,
 }
 
 fn get_solver_version(
@@ -751,6 +754,18 @@ fn main() -> anyhow::Result<()> {
         }
     }
     println!("Output: {}", output_path.display());
+
+    if args.fail_on_error && !failed_projects.is_empty() {
+        return Err(anyhow!(
+            "{} project(s) failed verification: {}",
+            failed_projects.len(),
+            failed_projects
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
 
     Ok(())
 }
