@@ -142,6 +142,57 @@ def print_top5_single(results):
         print()
 
 
+# ── Single-run Markdown output ────────────────────────────────────────────────
+
+def print_single_summary_md(results):
+    entries = sorted_entries(results)
+    show_crate = any(r["crate_root"] is not None for _, r in entries)
+
+    if show_crate:
+        print("| Project | Crate Root | Status | Verified | Errors | Total Time |")
+        print("|---------|------------|--------|----------|--------|------------|")
+    else:
+        print("| Project | Status | Verified | Errors | Total Time |")
+        print("|---------|--------|----------|--------|------------|")
+
+    for _, r in entries:
+        status = fmt_status(r["success"])
+        verified = fmt_int_or_dash(r["verified"])
+        errors = fmt_int_or_dash(r["errors"])
+        total = fmt_time(r["total_ms"])
+        if show_crate:
+            cr = r["crate_root"] or ""
+            print(f"| {r['name']} | {cr} | {status} | {verified} | {errors} | {total} |")
+        else:
+            print(f"| {r['name']} | {status} | {verified} | {errors} | {total} |")
+
+    print()
+
+
+def print_top5_single_md(results):
+    entries = sorted_entries(results)
+
+    print("### Top 5 Slowest Functions")
+    print()
+
+    for _, r in entries:
+        print(f"**{r['name']}**")
+        print()
+        fns = r["functions"]
+        if not fns:
+            print("_(no timing data available)_")
+            print()
+            continue
+        print("| # | Time | Function |")
+        print("|---|------|----------|")
+        top5 = sorted(fns, key=lambda f: f["time_ms"] or 0, reverse=True)[:5]
+        for i, fn in enumerate(top5, 1):
+            t = fn["time_ms"]
+            tstr = f"{t} ms" if t is not None else "N/A"
+            print(f"| {i} | {tstr} | `{fn['name']}` |")
+        print()
+
+
 # ── Two-run comparison output ──────────────────────────────────────────────────
 
 def _signed(n):
@@ -325,6 +376,118 @@ def print_top5_comparison(old_results, new_results):
         print()
 
 
+# ── Two-run comparison Markdown output ────────────────────────────────────────
+
+def print_comparison_summary_md(old_results, new_results):
+    all_stems = sorted(
+        set(old_results.keys()) | set(new_results.keys()),
+        key=lambda s: ((old_results.get(s) or new_results.get(s))["name"], s),
+    )
+
+    show_crate = any(
+        (old_results.get(s) or new_results.get(s))["crate_root"] is not None
+        for s in all_stems
+    )
+
+    if show_crate:
+        print("| Project | Crate Root | Status | Verified | Errors | Total Time |")
+        print("|---------|------------|--------|----------|--------|------------|")
+    else:
+        print("| Project | Status | Verified | Errors | Total Time |")
+        print("|---------|--------|----------|--------|------------|")
+
+    for stem in all_stems:
+        old = old_results.get(stem)
+        new = new_results.get(stem)
+        name = (old or new)["name"]
+        crate_root = (old or new)["crate_root"]
+
+        if old is None:
+            status_str = "(new)"
+            ver_str = fmt_int_or_dash(new["verified"])
+            err_str = fmt_int_or_dash(new["errors"])
+            time_str = fmt_time(new["total_ms"])
+        elif new is None:
+            status_str = "(removed)"
+            ver_str = fmt_int_or_dash(old["verified"])
+            err_str = fmt_int_or_dash(old["errors"])
+            time_str = fmt_time(old["total_ms"])
+        else:
+            old_st = fmt_status(old["success"])
+            new_st = fmt_status(new["success"])
+            status_str = old_st if old_st == new_st else f"{old_st} → {new_st}"
+            ver_str = _cmp_int(old["verified"], new["verified"])
+            err_str = _cmp_int(old["errors"], new["errors"])
+            time_str = _cmp_time(old["total_ms"], new["total_ms"])
+
+        if show_crate:
+            cr = crate_root or ""
+            print(f"| {name} | {cr} | {status_str} | {ver_str} | {err_str} | {time_str} |")
+        else:
+            print(f"| {name} | {status_str} | {ver_str} | {err_str} | {time_str} |")
+
+    print()
+
+
+def print_top5_comparison_md(old_results, new_results):
+    all_stems = sorted(
+        set(old_results.keys()) | set(new_results.keys()),
+        key=lambda s: ((old_results.get(s) or new_results.get(s))["name"], s),
+    )
+
+    print("### Top 5 Slowest Functions")
+    print()
+
+    for stem in all_stems:
+        old = old_results.get(stem)
+        new = new_results.get(stem)
+        name = (old or new)["name"]
+        print(f"**{name}**")
+        print()
+
+        old_fns_map = {fn["name"]: fn for fn in old["functions"]} if old else {}
+        new_fns_map = {fn["name"]: fn for fn in new["functions"]} if new else {}
+
+        old_top5 = sorted(old["functions"], key=lambda f: f["time_ms"] or 0, reverse=True)[:5] if old else []
+        new_top5 = sorted(new["functions"], key=lambda f: f["time_ms"] or 0, reverse=True)[:5] if new else []
+
+        seen = set()
+        union_names = []
+        for fn in old_top5 + new_top5:
+            if fn["name"] not in seen:
+                seen.add(fn["name"])
+                union_names.append(fn["name"])
+
+        if not union_names:
+            print("_(no timing data available)_")
+            print()
+            continue
+
+        print("| Function | Old | New | Change |")
+        print("|----------|-----|-----|--------|")
+
+        for fn_name in union_names:
+            old_fn = old_fns_map.get(fn_name)
+            new_fn = new_fns_map.get(fn_name)
+
+            old_t = old_fn["time_ms"] if old_fn else None
+            new_t = new_fn["time_ms"] if new_fn else None
+
+            old_str = f"{old_t} ms" if old_fn is not None and old_t is not None else ("(new)" if old_fn is None else "N/A")
+            new_str = f"{new_t} ms" if new_fn is not None and new_t is not None else ("(gone)" if new_fn is None else "N/A")
+
+            if old_t is not None and new_t is not None:
+                delta = new_t - old_t
+                pct = (delta / old_t) * 100 if old_t != 0 else 0
+                change_str = f"{_signed(delta)} ms ({_signed_f(pct, 1)}%)"
+            else:
+                change_str = ""
+
+            print(f"| `{fn_name}` | {old_str} | {new_str} | {change_str} |")
+
+        print()
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -342,6 +505,11 @@ def main():
         ),
     )
     parser.add_argument(
+        "--markdown", "-m",
+        action="store_true",
+        help="output in Markdown table format",
+    )
+    parser.add_argument(
         "dirs",
         nargs="+",
         metavar="DIR",
@@ -353,21 +521,31 @@ def main():
     )
     args = parser.parse_args()
 
+    md = args.markdown
+
     if len(args.dirs) == 1:
         results = load_results(args.dirs[0])
         if not results:
             print(f"No JSON files found in {args.dirs[0]}")
             return
-        print_single_summary(results)
-        print_top5_single(results)
+        if md:
+            print_single_summary_md(results)
+            print_top5_single_md(results)
+        else:
+            print_single_summary(results)
+            print_top5_single(results)
     elif len(args.dirs) == 2:
         old_results = load_results(args.dirs[0])
         new_results = load_results(args.dirs[1])
         if not old_results and not new_results:
             print("No JSON files found in either directory")
             return
-        print_comparison_summary(old_results, new_results)
-        print_top5_comparison(old_results, new_results)
+        if md:
+            print_comparison_summary_md(old_results, new_results)
+            print_top5_comparison_md(old_results, new_results)
+        else:
+            print_comparison_summary(old_results, new_results)
+            print_top5_comparison(old_results, new_results)
     else:
         parser.error("Expected 1 or 2 directories")
 
